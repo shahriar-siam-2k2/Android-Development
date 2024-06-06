@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">FitCalc</string>
+    <string name="fit_calc_icon">Fit Calc Icon</string>
+    <string name="fitcalc_icon">FitCalc Icon</string>
+    <string name="fitcalc">FitCalc</string>
+    <string name="your_fitness_calculator">Your Fitness Calculator</string>
+    <string name="bmi">BMI</string>
+    <string name="bmr">BMR</string>
+    <string name="about">About</string>
+
+    <string-array name="activities">
+        <item>Choose Your Activity…</item>
+        <item>Less Active</item>
+        <item>Light Active</item>
+        <item>Active</item>
+        <item>Intense Active</item>
+        <item>Very Intense Active</item>
+    </string-array>
+
+</resources>
