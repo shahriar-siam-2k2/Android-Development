@@ -1,7 +1,6 @@
 package com.example.firebotcontroller;
 
 import android.annotation.SuppressLint;
-import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -16,42 +15,49 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 
-import java.io.IOException;
-import okhttp3.Call;
-import okhttp3.Callback;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
+import java.util.HashMap;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String BASE_URL = "http://192.168.4.1";
+    // You still need the local IP for the raw video stream (until port forwarding is set up)
     private static final String STREAM_URL = "http://192.168.4.1:81/stream";
 
-    private final OkHttpClient httpClient = new OkHttpClient();
-    private final Handler telemetryHandler = new Handler(Looper.getMainLooper());
-    private Runnable telemetryRunnable;
+    // --- Firebase References ---
+    private FirebaseDatabase database;
+    private DatabaseReference cmdRef;
+    private DatabaseReference telemetryRef;
+    private DatabaseReference connectedRef;
 
     // Pump Blinking Variables
     private final Handler pumpBlinkHandler = new Handler(Looper.getMainLooper());
     private Runnable pumpBlinkRunnable;
     private boolean pumpColorToggle = false;
 
+    // Robot Connection Watchdog
+    private long lastRobotHeartbeat = 0;
+    private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
+    private Runnable watchdogRunnable;
+
     private WebView streamWebView, mapWebView;
-    private TextView txtBattery, txtWaterLevel, txtHumidity, txtTemp, txtStatus;
-    private View statusIndicator;
+    private TextView txtBattery, txtWaterLevel, txtHumidity, txtTemp, txtCloudStatus, txtRobotStatus;
+    private View cloudIndicator, robotIndicator;
     private LinearLayout controllerContainer;
     private Button btnPumpToggle, btnEStop, btnCallRobot;
 
     private boolean isPumpActive = false;
     private boolean isLocked = false;
 
-    // Fallback GPS location if the phone needs to send its own location
+    // Fallback GPS location
     private double myLat = 23.7937;
     private double myLon = 90.4066;
 
@@ -61,6 +67,12 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // --- Initialize Firebase ---
+        database = FirebaseDatabase.getInstance("https://firebot-db-default-rtdb.asia-southeast1.firebasedatabase.app/");
+        cmdRef = database.getReference("commands/latest");
+        telemetryRef = database.getReference("telemetry");
+        connectedRef = database.getReference(".info/connected");
+
         // Bind Views
         streamWebView = findViewById(R.id.streamWebView);
         mapWebView = findViewById(R.id.mapWebView);
@@ -68,8 +80,12 @@ public class MainActivity extends AppCompatActivity {
         txtWaterLevel = findViewById(R.id.txtWaterLevel);
         txtHumidity = findViewById(R.id.txtHumidity);
         txtTemp = findViewById(R.id.txtTemp);
-        txtStatus = findViewById(R.id.txtStatus);
-        statusIndicator = findViewById(R.id.statusIndicator);
+
+        txtCloudStatus = findViewById(R.id.txtCloudStatus);
+        cloudIndicator = findViewById(R.id.cloudIndicator);
+        txtRobotStatus = findViewById(R.id.txtRobotStatus);
+        robotIndicator = findViewById(R.id.robotIndicator);
+
         controllerContainer = findViewById(R.id.controllerContainer);
         btnPumpToggle = findViewById(R.id.btnPumpToggle);
         btnEStop = findViewById(R.id.btnEStop);
@@ -79,7 +95,9 @@ public class MainActivity extends AppCompatActivity {
         setupChassisControls();
         setupActuatorControls();
         setupSpecialButtons();
-        startTelemetryPolling();
+
+        // Start listening to Firebase
+        startFirebaseListeners();
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -116,14 +134,14 @@ public class MainActivity extends AppCompatActivity {
 
     @SuppressLint("ClickableViewAccessibility")
     private void setupChassisControls() {
-        bindHoldAction(findViewById(R.id.btnFwd), "fwd");
-        bindHoldAction(findViewById(R.id.btnRev), "rev");
-        bindHoldAction(findViewById(R.id.btnLeft), "left");
-        bindHoldAction(findViewById(R.id.btnRight), "right");
+        bindHoldAction(findViewById(R.id.btnFwd), "CHASSIS", "FORWARD");
+        bindHoldAction(findViewById(R.id.btnRev), "CHASSIS", "REVERSE");
+        bindHoldAction(findViewById(R.id.btnLeft), "CHASSIS", "LEFT");
+        bindHoldAction(findViewById(R.id.btnRight), "CHASSIS", "RIGHT");
 
         findViewById(R.id.btnStop).setOnClickListener(v -> {
             if (!isLocked) {
-                sendCommand("stop");
+                sendCommand("CHASSIS", "STOP");
                 blinkStopButton((Button) v);
             }
         });
@@ -131,48 +149,43 @@ public class MainActivity extends AppCompatActivity {
 
     @SuppressLint("ClickableViewAccessibility")
     private void setupActuatorControls() {
-        // Upgraded standard actuators to use bindHoldAction for instant stop and color inversion
-        bindHoldAction(findViewById(R.id.btnArmUp), "arm_up");
-        bindHoldAction(findViewById(R.id.btnArmDown), "arm_down");
-        bindHoldAction(findViewById(R.id.btnBaseL), "base_left");
-        bindHoldAction(findViewById(R.id.btnBaseR), "base_right");
-        bindHoldAction(findViewById(R.id.btnNozzleUp), "nozzle_up");
-        bindHoldAction(findViewById(R.id.btnNozzleDown), "nozzle_down");
-        bindHoldAction(findViewById(R.id.btnNozzlePanL), "nozzle_pan_l");
-        bindHoldAction(findViewById(R.id.btnNozzlePanR), "nozzle_pan_r");
+        bindHoldAction(findViewById(R.id.btnArmUp), "ARM_LIFT", "UP");
+        bindHoldAction(findViewById(R.id.btnArmDown), "ARM_LIFT", "DOWN");
+        bindHoldAction(findViewById(R.id.btnBaseL), "ARM_TURN", "LEFT");
+        bindHoldAction(findViewById(R.id.btnBaseR), "ARM_TURN", "RIGHT");
+        bindHoldAction(findViewById(R.id.btnNozzleUp), "NOZZLE", "UP");
+        bindHoldAction(findViewById(R.id.btnNozzleDown), "NOZZLE", "DOWN");
+        bindHoldAction(findViewById(R.id.btnNozzlePanL), "NOZZLE", "LEFT");
+        bindHoldAction(findViewById(R.id.btnNozzlePanR), "NOZZLE", "RIGHT");
 
         btnPumpToggle.setOnClickListener(v -> {
             if (isLocked) return;
 
             isPumpActive = !isPumpActive;
             if (isPumpActive) {
-                sendCommand("pump_on");
+                sendCommand("PUMP", "ON");
                 btnPumpToggle.setText("HAULT");
-                btnPumpToggle.setTextColor(0xFFFFFFFF); // White text
+                btnPumpToggle.setTextColor(0xFFFFFFFF);
 
-                // Start continuous blinking
                 pumpBlinkRunnable = new Runnable() {
                     @Override
                     public void run() {
                         pumpColorToggle = !pumpColorToggle;
                         if (pumpColorToggle) {
-                            btnPumpToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF008799)); // Darker given color
+                            btnPumpToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF008799));
                         } else {
-                            btnPumpToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF00E1FF)); // Original Cyan
+                            btnPumpToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF00E1FF));
                         }
-                        pumpBlinkHandler.postDelayed(this, 300); // Toggle every 300ms
+                        pumpBlinkHandler.postDelayed(this, 300);
                     }
                 };
                 pumpBlinkHandler.post(pumpBlinkRunnable);
             } else {
-                sendCommand("pump_off");
-                // Stop blinking and reset
-                if (pumpBlinkRunnable != null) {
-                    pumpBlinkHandler.removeCallbacks(pumpBlinkRunnable);
-                }
+                sendCommand("PUMP", "OFF");
+                if (pumpBlinkRunnable != null) pumpBlinkHandler.removeCallbacks(pumpBlinkRunnable);
                 btnPumpToggle.setText("PUMP");
-                btnPumpToggle.setTextColor(0xFF000000); // Black text
-                btnPumpToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF00E1FF)); // Original Cyan
+                btnPumpToggle.setTextColor(0xFF000000);
+                btnPumpToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF00E1FF));
             }
         });
     }
@@ -180,19 +193,19 @@ public class MainActivity extends AppCompatActivity {
     private void setupSpecialButtons() {
         btnCallRobot.setOnClickListener(v -> {
             if (isLocked) return;
-            sendCommand("call_loc_" + myLat + "_" + myLon);
+            sendCommand("AUTOPILOT", "CALL_" + myLat + "_" + myLon);
             Toast.makeText(this, "Calling robot to your location...", Toast.LENGTH_SHORT).show();
         });
 
         btnEStop.setOnClickListener(v -> {
             isLocked = !isLocked;
-
             if (isLocked) {
-                sendCommand("emergency_stop");
+                sendCommand("ESTOP", "ON");
                 btnEStop.setBackgroundColor(0xFFB71C1C);
                 btnEStop.setText("UNLOCK CONTROLS");
                 setViewGroupEnabled(controllerContainer, false);
             } else {
+                sendCommand("ESTOP", "OFF");
                 btnEStop.setBackgroundColor(0xFFD32F2F);
                 btnEStop.setText("E-STOP (LOCK)");
                 setViewGroupEnabled(controllerContainer, true);
@@ -200,25 +213,23 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // Custom 5-blink logic for the Stop Button
     private void blinkStopButton(Button btnStop) {
         Handler handler = new Handler(Looper.getMainLooper());
         int blinkCount = 5;
-        long delay = 150; // ms between flashes
+        long delay = 150;
 
         for (int i = 0; i < blinkCount * 2; i++) {
             final boolean isDark = (i % 2 == 0);
             handler.postDelayed(() -> {
                 if (isDark) {
-                    btnStop.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF991F00)); // Dark Red
+                    btnStop.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF991F00));
                 } else {
-                    btnStop.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFFF3300)); // Bright Red
+                    btnStop.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFFF3300));
                 }
             }, i * delay);
         }
     }
 
-    // Recursively disables layout buttons
     private void setViewGroupEnabled(ViewGroup viewGroup, boolean enabled) {
         viewGroup.setAlpha(enabled ? 1.0f : 0.4f);
         for (int i = 0; i < viewGroup.getChildCount(); i++) {
@@ -231,23 +242,21 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    private void bindHoldAction(View view, String actionCommand) {
+    private void bindHoldAction(View view, String part, String cmd) {
         Button button = (Button) view;
         button.setOnTouchListener((v, event) -> {
             if (isLocked) return false;
 
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                sendCommand(actionCommand);
-                // Invert Colors (Foreground becomes Background, Background becomes Foreground)
-                button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFFFFFFF)); // White Background
-                button.setTextColor(0xFF424242); // Dark Text
+                sendCommand(part, cmd);
+                button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFFFFFFF));
+                button.setTextColor(0xFF424242);
                 v.setPressed(true);
                 return true;
             } else if (event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL) {
-                sendCommand("stop");
-                // Revert Colors
-                button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF424242)); // Dark Background
-                button.setTextColor(0xFFFFFFFF); // White Text
+                sendCommand(part, "STOP");
+                button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF424242));
+                button.setTextColor(0xFFFFFFFF);
                 v.setPressed(false);
                 return true;
             }
@@ -255,55 +264,34 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void sendCommand(String cmd) {
-        String url = BASE_URL + "/cmd?val=" + cmd;
-        Request request = new Request.Builder().url(url).build();
-
-        httpClient.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                updateConnectionStatus(false);
-            }
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
-                updateConnectionStatus(true);
-                response.close();
-            }
-        });
+    // Writes the command directly to the Firebase Realtime Database
+    private void sendCommand(String part, String cmd) {
+        Map<String, Object> commandData = new HashMap<>();
+        commandData.put("part", part);
+        commandData.put("cmd", cmd);
+        commandData.put("timestamp", System.currentTimeMillis());
+        cmdRef.setValue(commandData);
     }
 
-    private void startTelemetryPolling() {
-        telemetryRunnable = new Runnable() {
+    private void startFirebaseListeners() {
+        // 1. Listen for Telemetry and Heartbeat
+        telemetryRef.addValueEventListener(new ValueEventListener() {
             @Override
-            public void run() {
-                fetchTelemetry();
-                telemetryHandler.postDelayed(this, 1000);
-            }
-        };
-        telemetryHandler.post(telemetryRunnable);
-    }
-
-    private void fetchTelemetry() {
-        Request request = new Request.Builder().url(BASE_URL + "/telemetry").build();
-        httpClient.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                updateConnectionStatus(false);
-            }
-
-            @Override
-            public void onResponse(Call call, Response response) throws IOException {
-                if (response.isSuccessful() && response.body() != null) {
-                    updateConnectionStatus(true);
-                    String json = response.body().string();
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                if (snapshot.exists()) {
                     try {
-                        JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
-                        int battery = obj.get("bat").getAsInt();
-                        int water = obj.get("water").getAsInt();
-                        double humidity = obj.get("hum").getAsDouble();
-                        double temp = obj.get("temp").getAsDouble();
-                        double lat = obj.get("lat").getAsDouble();
-                        double lon = obj.get("lon").getAsDouble();
+                        // The robot must push a timestamp with every telemetry upload
+                        if (snapshot.hasChild("timestamp")) {
+                            lastRobotHeartbeat = snapshot.child("timestamp").getValue(Long.class);
+                            updateRobotStatus(true);
+                        }
+
+                        int battery = snapshot.child("bat").getValue(Integer.class);
+                        int water = snapshot.child("water").getValue(Integer.class);
+                        double humidity = snapshot.child("hum").getValue(Double.class);
+                        double temp = snapshot.child("temp").getValue(Double.class);
+                        double lat = snapshot.child("lat").getValue(Double.class);
+                        double lon = snapshot.child("lon").getValue(Double.class);
 
                         runOnUiThread(() -> {
                             txtBattery.setText("🔋 Battery: " + battery + "%");
@@ -314,21 +302,71 @@ public class MainActivity extends AppCompatActivity {
                         });
                     } catch (Exception ignored) {}
                 }
-                response.close();
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {}
+        });
+
+        // 2. Listen for the App's Connection to Firebase
+        connectedRef.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                boolean connected = snapshot.getValue(Boolean.class);
+                updateCloudStatus(connected);
+            }
+
+            @Override
+            public void onCancelled(@NonNull DatabaseError error) {}
+        });
+
+        // 3. Start the Robot Watchdog (Checks every 1 second)
+        watchdogRunnable = new Runnable() {
+            @Override
+            public void run() {
+                // If the last heartbeat is older than 4 seconds, mark Robot Offline
+                if (System.currentTimeMillis() - lastRobotHeartbeat > 4000) {
+                    updateRobotStatus(false);
+                }
+                watchdogHandler.postDelayed(this, 1000);
+            }
+        };
+        watchdogHandler.post(watchdogRunnable);
+    }
+
+    private void updateCloudStatus(boolean isConnected) {
+        runOnUiThread(() -> {
+            if (isConnected) {
+                txtCloudStatus.setText("CLOUD CONNECTED");
+                txtCloudStatus.setTextColor(0xFF4CAF50); // Green
+                cloudIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF4CAF50));
+            } else {
+                txtCloudStatus.setText("CLOUD OFFLINE");
+                txtCloudStatus.setTextColor(0xFFF44336); // Red
+                cloudIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFF44336));
+
+                // If cloud drops, we assume we lost the robot too
+                updateRobotStatus(false);
             }
         });
     }
 
-    private void updateConnectionStatus(boolean isConnected) {
+    private void updateRobotStatus(boolean isConnected) {
         runOnUiThread(() -> {
             if (isConnected) {
-                txtStatus.setText("CONNECTED TO FIREBOT");
-                txtStatus.setTextColor(0xFF4CAF50); // Green
-                statusIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF4CAF50));
+                txtRobotStatus.setText("ROBOT ONLINE");
+                txtRobotStatus.setTextColor(0xFF4CAF50); // Green
+                robotIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF4CAF50));
             } else {
-                txtStatus.setText("DISCONNECTED");
-                txtStatus.setTextColor(0xFFF44336); // Red
-                statusIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFF44336));
+                txtRobotStatus.setText("ROBOT OFFLINE");
+                txtRobotStatus.setTextColor(0xFFF44336); // Red
+                robotIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFF44336));
+
+                // Clear telemetry screen if robot drops
+                txtBattery.setText("🔋 Battery: -- %");
+                txtWaterLevel.setText("💧 Tank: -- %");
+                txtHumidity.setText("☁️ Humid: -- % RH");
+                txtTemp.setText("🌡 Temp: -- °C");
             }
         });
     }
@@ -336,11 +374,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (telemetryHandler != null && telemetryRunnable != null) {
-            telemetryHandler.removeCallbacks(telemetryRunnable);
-        }
         if (pumpBlinkHandler != null && pumpBlinkRunnable != null) {
             pumpBlinkHandler.removeCallbacks(pumpBlinkRunnable);
+        }
+        if (watchdogHandler != null && watchdogRunnable != null) {
+            watchdogHandler.removeCallbacks(watchdogRunnable);
         }
     }
 }

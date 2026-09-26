@@ -12,30 +12,67 @@
         android:orientation="vertical"
         android:padding="8dp">
 
-        <!-- Connection Status -->
+        <!-- Connection Status (Cloud & Robot) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:layout_marginBottom="6dp"
-            android:paddingStart="4dp">
-            <View
-                android:id="@+id/statusIndicator"
-                android:layout_width="12dp"
-                android:layout_height="12dp"
-                android:layout_marginEnd="6dp"
-                android:background="@drawable/status_dot"
-                android:backgroundTint="#F44336" />
+            android:paddingStart="4dp"
+            android:weightSum="2">
 
-            <TextView
-                android:id="@+id/txtStatus"
-                android:layout_width="wrap_content"
+            <!-- Cloud Connection (Top Left) -->
+            <LinearLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="DISCONNECTED"
-                android:textColor="#F44336"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="center_vertical|start">
+                <View
+                    android:id="@+id/cloudIndicator"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginEnd="6dp"
+                    android:background="@drawable/status_dot"
+                    android:backgroundTint="#F44336" />
+                <TextView
+                    android:id="@+id/txtCloudStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="CLOUD OFFLINE"
+                    android:textColor="#F44336"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- Robot Connection (Top Right) -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="horizontal"
+                android:gravity="center_vertical|end"
+                android:paddingEnd="4dp">
+
+                <TextView
+                    android:id="@+id/txtRobotStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ROBOT OFFLINE"
+                    android:textColor="#F44336"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <!-- Moved the indicator AFTER the text and changed marginEnd to marginStart -->
+                <View
+                    android:id="@+id/robotIndicator"
+                    android:layout_width="12dp"
+                    android:layout_height="12dp"
+                    android:layout_marginStart="6dp"
+                    android:background="@drawable/status_dot"
+                    android:backgroundTint="#F44336" />
+            </LinearLayout>
         </LinearLayout>
 
         <!-- Stream & Location WebViews -->

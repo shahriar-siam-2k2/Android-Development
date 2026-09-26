@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "253592070321",
+    "project_id": "firebot-db",
+    "storage_bucket": "firebot-db.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:253592070321:android:88e71bf93483e323345a90",
+        "android_client_info": {
+          "package_name": "com.example.firebotcontroller"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA5-EF_JUZlwrrBA66D_gwg9kNgGqxbV6w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
