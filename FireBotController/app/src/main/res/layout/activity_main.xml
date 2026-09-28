@@ -1,59 +1,93 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#121212"
-    android:fillViewport="true">
+    android:background="#121212">
 
+    <!-- ========================================== -->
+    <!-- MAIN APP CONTENT (No Scrolling)            -->
+    <!-- ========================================== -->
     <LinearLayout
+        android:id="@+id/mainAppContent"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:orientation="vertical"
-        android:padding="8dp">
+        android:padding="6dp"
+        android:visibility="gone">
 
-        <!-- Connection Status (Cloud & Robot) -->
+        <!-- Top Header with Status and Sync -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="6dp"
-            android:paddingStart="4dp"
-            android:weightSum="2">
+            android:layout_marginBottom="4dp">
 
-            <!-- Cloud Connection (Top Left) -->
+            <!-- Cloud Connection (Left) -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:orientation="horizontal"
-                android:gravity="center_vertical|start">
-                <View
-                    android:id="@+id/cloudIndicator"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
-                    android:layout_marginEnd="6dp"
-                    android:background="@drawable/status_dot"
-                    android:backgroundTint="#F44336" />
-                <TextView
-                    android:id="@+id/txtCloudStatus"
+                android:orientation="vertical"
+                android:gravity="start">
+
+                <LinearLayout
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="CLOUD OFFLINE"
-                    android:textColor="#F44336"
-                    android:textSize="11sp"
-                    android:textStyle="bold" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+                    <View
+                        android:id="@+id/cloudIndicator"
+                        android:layout_width="10dp"
+                        android:layout_height="10dp"
+                        android:layout_marginEnd="6dp"
+                        android:background="@drawable/status_dot"
+                        android:backgroundTint="#F44336" />
+                    <TextView
+                        android:id="@+id/txtCloudStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="CLOUD OFFLINE"
+                        android:textColor="#F44336"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- Red error text when cloud fails -->
+                <TextView
+                    android:id="@+id/txtCloudError"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Failed to connect to Firebase"
+                    android:textColor="#D32F2F"
+                    android:textSize="9sp"
+                    android:textStyle="bold"
+                    android:visibility="gone"/>
             </LinearLayout>
 
-            <!-- Robot Connection (Top Right) -->
+            <!-- Sync Button (Center) -->
+            <Button
+                android:id="@+id/btnForceSync"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:backgroundTint="#1976D2"
+                android:text="SYNC"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:textSize="11sp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"/>
+
+            <!-- Robot Local Connection (Right) -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="horizontal"
-                android:gravity="center_vertical|end"
-                android:paddingEnd="4dp">
+                android:gravity="center_vertical|end">
 
                 <TextView
                     android:id="@+id/txtRobotStatus"
@@ -64,11 +98,10 @@
                     android:textSize="11sp"
                     android:textStyle="bold" />
 
-                <!-- Moved the indicator AFTER the text and changed marginEnd to marginStart -->
                 <View
                     android:id="@+id/robotIndicator"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
+                    android:layout_width="10dp"
+                    android:layout_height="10dp"
                     android:layout_marginStart="6dp"
                     android:background="@drawable/status_dot"
                     android:backgroundTint="#F44336" />
@@ -78,7 +111,8 @@
         <!-- Stream & Location WebViews -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="140dp"
+            android:layout_height="0dp"
+            android:layout_weight="1"
             android:orientation="horizontal"
             android:weightSum="2">
 
@@ -86,7 +120,7 @@
                 android:id="@+id/streamWebView"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginEnd="4dp"
+                android:layout_marginEnd="2dp"
                 android:layout_weight="1.2"
                 android:background="#000000" />
 
@@ -94,7 +128,7 @@
                 android:id="@+id/mapWebView"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_marginStart="4dp"
+                android:layout_marginStart="2dp"
                 android:layout_weight="0.8"
                 android:background="#1E1E1E" />
         </LinearLayout>
@@ -103,9 +137,9 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="6dp"
             app:cardBackgroundColor="#1E1E1E"
-            app:cardCornerRadius="8dp"
+            app:cardCornerRadius="6dp"
             app:strokeColor="#333333"
             app:strokeWidth="1dp">
 
@@ -113,130 +147,376 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="10dp">
+                android:padding="8dp">
 
                 <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:weightSum="2">
-                    <TextView android:id="@+id/txtBattery" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="🔋 Battery: -- %" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"/>
-                    <TextView android:id="@+id/txtWaterLevel" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="💧 Tank: -- %" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"/>
+                    <TextView android:id="@+id/txtBattery" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="🔋 Battery: -- %" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
+                    <TextView android:id="@+id/txtWaterLevel" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="💧 Tank: -- %" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
                 </LinearLayout>
 
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:weightSum="2" android:layout_marginTop="6dp">
-                    <TextView android:id="@+id/txtHumidity" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="☁️ Humid: -- % RH" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"/>
-                    <TextView android:id="@+id/txtTemp" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="🌡 Temp: -- °C" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold"/>
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:weightSum="2" android:layout_marginTop="4dp">
+                    <TextView android:id="@+id/txtHumidity" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="☁️ Humid: -- % RH" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
+                    <TextView android:id="@+id/txtTemp" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="🌡 Temp: -- °C" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- New Action Buttons (Call Robot & E-STOP) -->
+        <!-- Action Buttons -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="8dp"
-            android:weightSum="2">
+            android:layout_marginTop="6dp"
+            android:weightSum="4">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCallRobot"
                 android:layout_width="0dp"
-                android:layout_height="50dp"
+                android:layout_height="45dp"
                 android:layout_weight="1"
-                android:layout_marginEnd="4dp"
+                android:layout_marginEnd="1dp"
                 app:cornerRadius="6dp"
                 android:backgroundTint="#FF9800"
-                android:text="CALL TO MY LOCATION"
+                android:text="RECALL BOT"
+                android:textStyle="bold"
+                android:textSize="12sp"
+                android:padding="0dp"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnConnectManual"
+                android:layout_width="0dp"
+                android:layout_height="45dp"
+                android:layout_weight="1"
+                android:layout_marginStart="1dp"
+                android:layout_marginEnd="1dp"
+                app:cornerRadius="6dp"
+                android:backgroundTint="#1976D2"
+                android:text="CONNECT BOT"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
-                android:textSize="12sp" />
+                android:textSize="12sp"
+                android:padding="0dp"/>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnEStop"
                 android:layout_width="0dp"
-                android:layout_height="50dp"
+                android:layout_height="45dp"
                 android:layout_weight="1"
-                android:layout_marginStart="4dp"
+                android:layout_marginStart="1dp"
+                android:layout_marginEnd="1dp"
                 app:cornerRadius="6dp"
                 android:backgroundTint="#D32F2F"
-                android:text="E-STOP (LOCK)"
+                android:text="E-STOP"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
                 android:textSize="12sp"
-                app:strokeColor="#FFFFFF"
-                app:strokeWidth="2dp"/>
+                android:padding="0dp"/>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnExit"
+                android:layout_width="0dp"
+                android:layout_height="45dp"
+                android:layout_weight="1"
+                android:layout_marginStart="1dp"
+                app:cornerRadius="6dp"
+                android:backgroundTint="#04AA6D"
+                android:text="EXIT"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:textSize="12sp"
+                android:padding="0dp"/>
         </LinearLayout>
 
-        <!-- Main Controller Body (Wrapped in ID for locking) -->
+        <!-- Main Controller Body -->
         <LinearLayout
             android:id="@+id/controllerContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:gravity="center_horizontal"
-            android:layout_marginTop="8dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp"
+            android:layout_marginTop="6dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
             android:background="#18181D">
 
             <!-- Rover Chassis -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Rover Chassis" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
-
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Rover Chassis" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold" android:layout_marginBottom="2dp"/>
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:weightSum="3">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="50dp" android:weightSum="5" android:gravity="center">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="42dp" android:weightSum="5" android:gravity="center">
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnFwd" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="8dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="FWD" android:textColor="#FFF" android:textStyle="bold" android:textSize="13sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnFwd" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="FWD" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2"/>
                 </LinearLayout>
-                <LinearLayout android:layout_width="match_parent" android:layout_height="50dp" android:weightSum="5" android:gravity="center">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="42dp" android:weightSum="5" android:gravity="center">
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnLeft" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="8dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="LEFT" android:textColor="#FFF" android:textStyle="bold" android:textSize="13sp"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnStop" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="8dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#FF3300" android:text="STOP" android:textColor="#FFF" android:textStyle="bold" android:textSize="13sp"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnRight" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="8dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="RIGHT" android:textColor="#FFF" android:textStyle="bold" android:textSize="13sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnLeft" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="LEFT" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnStop" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#FF3300" android:text="STOP" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnRight" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="RIGHT" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"/>
                 </LinearLayout>
-                <LinearLayout android:layout_width="match_parent" android:layout_height="50dp" android:weightSum="5" android:gravity="center">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="42dp" android:weightSum="5" android:gravity="center">
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnRev" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="8dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="REV" android:textColor="#FFF" android:textStyle="bold" android:textSize="13sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnRev" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="REV" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2"/>
                 </LinearLayout>
             </LinearLayout>
 
             <!-- Arm and Base Controls -->
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:weightSum="2" android:layout_marginTop="8dp" android:layout_marginBottom="8dp">
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:paddingEnd="16dp" android:paddingStart="16dp">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Arm (NEMA17)" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold" android:layout_marginBottom="2dp"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnArmUp" android:layout_width="match_parent" android:layout_height="42dp" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="UP" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnArmDown" android:layout_width="match_parent" android:layout_height="42dp" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="DOWN" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:weightSum="2" android:layout_marginTop="4dp" android:layout_marginBottom="4dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:paddingEnd="8dp" android:paddingStart="8dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Arm (NEMA17)" android:textColor="#FFFFFF" android:textSize="12sp" android:textStyle="bold" android:layout_marginBottom="1dp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnArmUp" android:layout_width="match_parent" android:layout_height="40dp" android:layout_margin="1dp" android:padding="0dp" app:cornerRadius="4dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="UP" android:textColor="#FFF" android:textStyle="bold" android:textSize="11sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnArmDown" android:layout_width="match_parent" android:layout_height="40dp" android:layout_margin="1dp" android:padding="0dp" app:cornerRadius="4dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="DOWN" android:textColor="#FFF" android:textStyle="bold" android:textSize="11sp"/>
                 </LinearLayout>
-                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:paddingStart="16dp" android:paddingEnd="16dp">
-                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Base (28BYJ)" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold" android:layout_marginBottom="2dp"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnBaseL" android:layout_width="match_parent" android:layout_height="42dp" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="ROT L" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnBaseR" android:layout_width="match_parent" android:layout_height="42dp" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="ROT R" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:paddingStart="8dp" android:paddingEnd="8dp">
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Base (28BYJ)" android:textColor="#FFFFFF" android:textSize="12sp" android:textStyle="bold" android:layout_marginBottom="1dp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnBaseL" android:layout_width="match_parent" android:layout_height="40dp" android:layout_margin="1dp" android:padding="0dp" app:cornerRadius="4dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="ROT L" android:textColor="#FFF" android:textStyle="bold" android:textSize="11sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnBaseR" android:layout_width="match_parent" android:layout_height="40dp" android:layout_margin="1dp" android:padding="0dp" app:cornerRadius="4dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="ROT R" android:textColor="#FFF" android:textStyle="bold" android:textSize="11sp"/>
                 </LinearLayout>
             </LinearLayout>
 
             <!-- Nozzle & Pump -->
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Nozzle &amp; Pump" android:textColor="#FFFFFF" android:textSize="14sp" android:textStyle="bold" android:layout_marginBottom="4dp"/>
-
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Nozzle &amp; Pump" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold" android:layout_marginBottom="2dp"/>
             <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:weightSum="3">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="50dp" android:weightSum="5" android:gravity="center">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="42dp" android:weightSum="5" android:gravity="center">
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnNozzleUp" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="8dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="UP" android:textColor="#FFF" android:textStyle="bold" android:textSize="13sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnNozzleUp" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="UP" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2"/>
                 </LinearLayout>
-                <LinearLayout android:layout_width="match_parent" android:layout_height="50dp" android:weightSum="5" android:gravity="center">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="42dp" android:weightSum="5" android:gravity="center">
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnNozzlePanL" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="8dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="PAN L" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
-
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnPumpToggle" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="8dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#00e1ff" android:text="PUMP" android:textColor="#000000" android:textStyle="bold" android:textSize="12sp"/>
-
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnNozzlePanR" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="8dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="PAN R" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnNozzlePanL" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="PAN L" android:textColor="#FFF" android:textStyle="bold" android:textSize="11sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnPumpToggle" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#00e1ff" android:text="PUMP" android:textColor="#000000" android:textStyle="bold" android:textSize="11sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnNozzlePanR" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="PAN R" android:textColor="#FFF" android:textStyle="bold" android:textSize="11sp"/>
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"/>
                 </LinearLayout>
-                <LinearLayout android:layout_width="match_parent" android:layout_height="50dp" android:weightSum="5" android:gravity="center">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="42dp" android:weightSum="5" android:gravity="center">
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2"/>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/btnNozzleDown" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="8dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="DOWN" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
+                    <com.google.android.material.button.MaterialButton android:id="@+id/btnNozzleDown" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_margin="2dp" android:padding="0dp" app:cornerRadius="6dp" android:insetTop="0dp" android:insetBottom="0dp" android:backgroundTint="#424242" android:text="DOWN" android:textColor="#FFF" android:textStyle="bold" android:textSize="12sp"/>
                     <Space android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="2"/>
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+
+    <!-- ========================================== -->
+    <!-- MAIN FULLSCREEN LOGIN OVERLAY (Layer 1)    -->
+    <!-- ========================================== -->
+    <!-- MOVED ABOVE THE POPUPS SO POPUPS DRAW ON TOP -->
+    <LinearLayout
+        android:id="@+id/loginOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#12263F"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:elevation="10dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="IoT Firefighting Robot"
+            android:textColor="#F0A500"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="24dp"/>
+
+        <EditText
+            android:id="@+id/inputUsername"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:hint="Username"
+            android:textColorHint="#9FB3C8"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#4A6789"
+            android:layout_marginBottom="12dp"
+            android:inputType="text"/>
+
+        <EditText
+            android:id="@+id/inputPassword"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:hint="Password"
+            android:textColorHint="#9FB3C8"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#4A6789"
+            android:layout_marginBottom="24dp"
+            android:inputType="textPassword"/>
+
+        <Button
+            android:id="@+id/btnLogin"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:backgroundTint="#1976D2"
+            android:text="LOGIN VIA CLOUD"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:layout_marginBottom="12dp"/>
+
+        <Button
+            android:id="@+id/btnBypassOffline"
+            android:layout_width="match_parent"
+            android:layout_height="55dp"
+            android:backgroundTint="#F57C00"
+            android:text="CONTROL BOT WITHOUT NET"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"/>
+
+    </LinearLayout>
+
+    <!-- ========================================== -->
+    <!-- OVERLAY 1: CONNECT TO BOT MANUALLY (IP)    -->
+    <!-- ========================================== -->
+    <FrameLayout
+        android:id="@+id/ipDialogOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#A6000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="20dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="300dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="#1E1E1E"
+            android:elevation="24dp"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Enter Robot IP Address"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="12dp"/>
+
+            <EditText
+                android:id="@+id/inputManualIp"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:hint="192.168.4.1"
+                android:textColorHint="#888888"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#1976D2"
+                android:layout_marginBottom="16dp"
+                android:inputType="textUri"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:weightSum="2">
+
+                <Button
+                    android:id="@+id/btnCancelIp"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:backgroundTint="#ff4742"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginEnd="4dp"
+                    android:text="CANCEL"/>
+
+                <Button
+                    android:id="@+id/btnConnectIp"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:backgroundTint="#1976D2"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginStart="4dp"
+                    android:text="CONNECT"/>
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- ========================================== -->
+    <!-- OVERLAY 2: SYNC CREDENTIALS LOGIN          -->
+    <!-- ========================================== -->
+    <FrameLayout
+        android:id="@+id/syncLoginOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#A6000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="20dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="300dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="#1E1E1E"
+            android:elevation="24dp"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Login to Sync Data"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="12dp"/>
+
+            <EditText
+                android:id="@+id/inputSyncUsername"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:hint="Username"
+                android:textColorHint="#888888"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#4A6789"
+                android:layout_marginBottom="8dp"/>
+
+            <EditText
+                android:id="@+id/inputSyncPassword"
+                android:layout_width="match_parent"
+                android:layout_height="50dp"
+                android:hint="Password"
+                android:textColorHint="#888888"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#4A6789"
+                android:layout_marginBottom="16dp"
+                android:inputType="textPassword"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:weightSum="2">
+
+                <Button
+                    android:id="@+id/btnCancelSyncLogin"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:backgroundTint="#ff4742"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginEnd="4dp"
+                    android:text="CANCEL"/>
+
+                <Button
+                    android:id="@+id/btnSubmitSyncLogin"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:backgroundTint="#04AA6D"
+                    android:textColor="#FFFFFF"
+                    android:layout_marginStart="4dp"
+                    android:text="LOGIN"/>
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+
+</FrameLayout>

@@ -11,6 +11,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -24,56 +25,107 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
-    // You still need the local IP for the raw video stream (until port forwarding is set up)
-    private static final String STREAM_URL = "http://192.168.4.1:81/stream";
+    // --- DEVELOPMENT MODE ---
+    // Set to true to bypass IP connection tests. Set to false for production.
+    private boolean developmentMode = false;
 
-    // --- Firebase References ---
+    // Target ESP32 Local IP
+    private String robotIp = "192.168.4.1"; // Default fallback
+
+    // Firebase Architecture
     private FirebaseDatabase database;
     private DatabaseReference cmdRef;
-    private DatabaseReference telemetryRef;
+    private DatabaseReference telemetryHistoryRef;
     private DatabaseReference connectedRef;
 
-    // Pump Blinking Variables
-    private final Handler pumpBlinkHandler = new Handler(Looper.getMainLooper());
+    // HTTP Executor for Direct ESP32 Communication
+    private final ExecutorService networkExecutor = Executors.newSingleThreadExecutor();
+
+    // Timers & State
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
     private Runnable pumpBlinkRunnable;
+    private Runnable telemetryPoller;
     private boolean pumpColorToggle = false;
-
-    // Robot Connection Watchdog
     private long lastRobotHeartbeat = 0;
-    private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
-    private Runnable watchdogRunnable;
 
+    private boolean isLoggedIn = false;
+    private boolean isRobotConnected = false;
+    private boolean isCloudConnected = false;
+    private boolean wasOffline = true;
+
+    // UI Elements
+    private LinearLayout loginOverlay;
+    private View mainAppContent;
+    private EditText inputUsername, inputPassword;
     private WebView streamWebView, mapWebView;
-    private TextView txtBattery, txtWaterLevel, txtHumidity, txtTemp, txtCloudStatus, txtRobotStatus;
+    private TextView txtBattery, txtWaterLevel, txtHumidity, txtTemp, txtCloudStatus, txtRobotStatus, txtCloudError;
     private View cloudIndicator, robotIndicator;
     private LinearLayout controllerContainer;
-    private Button btnPumpToggle, btnEStop, btnCallRobot;
+    private Button btnPumpToggle, btnEStop, btnCallRobot, btnForceSync, btnConnectManual, btnExit;
+
+    // Overlay Elements
+    private View ipDialogOverlay, syncLoginOverlay;
+    private EditText inputManualIp, inputSyncUsername, inputSyncPassword;
+    private Button btnConnectIp, btnCancelIp, btnSubmitSyncLogin, btnCancelSyncLogin;
 
     private boolean isPumpActive = false;
     private boolean isLocked = false;
-
-    // Fallback GPS location
     private double myLat = 23.7937;
     private double myLon = 90.4066;
+
+    // Track which button triggered the IP Popup
+    private enum IpDialogContext { MANUAL, BYPASS }
+    private IpDialogContext currentIpContext;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Enable offline disk caching. Commands log locally without net, upload when connected.
+        try {
+            FirebaseDatabase.getInstance().setPersistenceEnabled(true);
+        } catch (Exception ignored) {}
+
         setContentView(R.layout.activity_main);
 
-        // --- Initialize Firebase ---
+        // Initialize Firebase
         database = FirebaseDatabase.getInstance("https://firebot-db-default-rtdb.asia-southeast1.firebasedatabase.app/");
         cmdRef = database.getReference("commands/latest");
-        telemetryRef = database.getReference("telemetry");
+        telemetryHistoryRef = database.getReference("telemetry_history");
         connectedRef = database.getReference(".info/connected");
 
-        // Bind Views
+        cmdRef.keepSynced(true);
+
+        bindViews();
+        setupLoginSystem();
+        setupWebViews();
+        setupChassisControls();
+        setupActuatorControls();
+        setupSpecialButtons();
+        setupOverlays();
+        startCloudListeners();
+    }
+
+    private void bindViews() {
+        loginOverlay = findViewById(R.id.loginOverlay);
+        mainAppContent = findViewById(R.id.mainAppContent);
+        inputUsername = findViewById(R.id.inputUsername);
+        inputPassword = findViewById(R.id.inputPassword);
+
         streamWebView = findViewById(R.id.streamWebView);
         mapWebView = findViewById(R.id.mapWebView);
         txtBattery = findViewById(R.id.txtBattery);
@@ -82,6 +134,7 @@ public class MainActivity extends AppCompatActivity {
         txtTemp = findViewById(R.id.txtTemp);
 
         txtCloudStatus = findViewById(R.id.txtCloudStatus);
+        txtCloudError = findViewById(R.id.txtCloudError);
         cloudIndicator = findViewById(R.id.cloudIndicator);
         txtRobotStatus = findViewById(R.id.txtRobotStatus);
         robotIndicator = findViewById(R.id.robotIndicator);
@@ -90,14 +143,171 @@ public class MainActivity extends AppCompatActivity {
         btnPumpToggle = findViewById(R.id.btnPumpToggle);
         btnEStop = findViewById(R.id.btnEStop);
         btnCallRobot = findViewById(R.id.btnCallRobot);
+        btnForceSync = findViewById(R.id.btnForceSync);
+        btnConnectManual = findViewById(R.id.btnConnectManual);
+        btnExit = findViewById(R.id.btnExit);
 
-        setupWebViews();
-        setupChassisControls();
-        setupActuatorControls();
-        setupSpecialButtons();
+        ipDialogOverlay = findViewById(R.id.ipDialogOverlay);
+        inputManualIp = findViewById(R.id.inputManualIp);
+        btnConnectIp = findViewById(R.id.btnConnectIp);
+        btnCancelIp = findViewById(R.id.btnCancelIp);
 
-        // Start listening to Firebase
-        startFirebaseListeners();
+        syncLoginOverlay = findViewById(R.id.syncLoginOverlay);
+        inputSyncUsername = findViewById(R.id.inputSyncUsername);
+        inputSyncPassword = findViewById(R.id.inputSyncPassword);
+        btnSubmitSyncLogin = findViewById(R.id.btnSubmitSyncLogin);
+        btnCancelSyncLogin = findViewById(R.id.btnCancelSyncLogin);
+    }
+
+    private void setupLoginSystem() {
+        findViewById(R.id.btnLogin).setOnClickListener(v -> {
+            if (!isCloudConnected && !developmentMode) {
+                Toast.makeText(this, "Cloud is offline. Cannot login.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            String user = inputUsername.getText().toString().trim();
+            String pass = inputPassword.getText().toString();
+
+            if (user.isEmpty() || pass.isEmpty()) {
+                Toast.makeText(this, "Enter credentials", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            database.getReference("users").child(user).addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull DataSnapshot snapshot) {
+                    if (snapshot.exists()) {
+                        String dbPass = snapshot.child("password").getValue(String.class);
+                        if (pass.equals(dbPass)) {
+                            if (snapshot.hasChild("robot_ip")) {
+                                robotIp = snapshot.child("robot_ip").getValue(String.class);
+                            }
+                            isLoggedIn = true;
+                            unlockApp();
+                        } else {
+                            Toast.makeText(MainActivity.this, "Wrong password", Toast.LENGTH_SHORT).show();
+                        }
+                    } else {
+                        Toast.makeText(MainActivity.this, "User not found", Toast.LENGTH_SHORT).show();
+                    }
+                }
+                @Override
+                public void onCancelled(@NonNull DatabaseError error) {
+                    Toast.makeText(MainActivity.this, "Network Error", Toast.LENGTH_SHORT).show();
+                }
+            });
+        });
+
+        findViewById(R.id.btnBypassOffline).setOnClickListener(v -> {
+            currentIpContext = IpDialogContext.BYPASS;
+            ipDialogOverlay.setVisibility(View.VISIBLE);
+        });
+
+        // Exit Button inside control panel
+        btnExit.setOnClickListener(v -> {
+            isLoggedIn = false;
+            loginOverlay.setVisibility(View.VISIBLE);
+            mainAppContent.setVisibility(View.GONE);
+            streamWebView.loadUrl("about:blank");
+            Toast.makeText(this, "Logged out", Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    private void setupOverlays() {
+        // --- IP CONNECT OVERLAY ---
+        btnConnectManual.setOnClickListener(v -> {
+            if (isRobotConnected && !developmentMode) {
+                Toast.makeText(this, "Robot is already connected with App", Toast.LENGTH_SHORT).show();
+            } else {
+                currentIpContext = IpDialogContext.MANUAL;
+                ipDialogOverlay.setVisibility(View.VISIBLE);
+            }
+        });
+
+        btnCancelIp.setOnClickListener(v -> ipDialogOverlay.setVisibility(View.GONE));
+
+        btnConnectIp.setOnClickListener(v -> {
+            String ip = inputManualIp.getText().toString().trim();
+            if (ip.isEmpty()) {
+                Toast.makeText(this, "Enter an IP address", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // --- DEVELOPMENT MODE BYPASS ---
+            if (developmentMode) {
+                Toast.makeText(this, "Dev Mode: Bypassing Connection Test", Toast.LENGTH_SHORT).show();
+                robotIp = ip;
+                ipDialogOverlay.setVisibility(View.GONE);
+                if (currentIpContext == IpDialogContext.BYPASS) {
+                    isLoggedIn = false;
+                    unlockApp();
+                } else {
+                    loadVideoStream(); // Reload stream with new dummy IP
+                }
+                return; // Stop here, do not run the actual HTTP test below
+            }
+            // -------------------------------
+
+            Toast.makeText(this, "Attempting connection...", Toast.LENGTH_SHORT).show();
+
+            testRobotConnection(ip, success -> {
+                if (success) {
+                    robotIp = ip;
+                    ipDialogOverlay.setVisibility(View.GONE);
+                    Toast.makeText(MainActivity.this, "Connected successfully!", Toast.LENGTH_SHORT).show();
+                    if (currentIpContext == IpDialogContext.BYPASS) {
+                        isLoggedIn = false;
+                        unlockApp();
+                    } else {
+                        loadVideoStream(); // Reload stream with new IP
+                    }
+                } else {
+                    Toast.makeText(MainActivity.this, "Failed to connect to IP: " + ip, Toast.LENGTH_SHORT).show();
+                }
+            });
+        });
+
+        // --- SYNC LOGIN OVERLAY ---
+        btnCancelSyncLogin.setOnClickListener(v -> syncLoginOverlay.setVisibility(View.GONE));
+
+        btnSubmitSyncLogin.setOnClickListener(v -> {
+            if (!isCloudConnected && !developmentMode) {
+                Toast.makeText(this, "Couldn't Connect to Cloud", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String user = inputSyncUsername.getText().toString().trim();
+            String pass = inputSyncPassword.getText().toString();
+
+            database.getReference("users").child(user).addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull DataSnapshot snapshot) {
+                    if (snapshot.exists() && pass.equals(snapshot.child("password").getValue(String.class))) {
+                        isLoggedIn = true;
+                        syncLoginOverlay.setVisibility(View.GONE);
+                        Toast.makeText(MainActivity.this, "Login successful, syncing...", Toast.LENGTH_SHORT).show();
+                        performSync();
+                    } else {
+                        Toast.makeText(MainActivity.this, "Login Failed", Toast.LENGTH_SHORT).show();
+                    }
+                }
+                @Override
+                public void onCancelled(@NonNull DatabaseError error) {}
+            });
+        });
+    }
+
+    private void unlockApp() {
+        loginOverlay.setVisibility(View.GONE);
+        mainAppContent.setVisibility(View.VISIBLE);
+        loadVideoStream();
+        startLocalTelemetryPoller();
+    }
+
+    private void loadVideoStream() {
+        String streamHtml = "<html><body style='margin:0;padding:0;background-color:black;'><img src='http://"
+                + robotIp + ":81/stream' width='100%' height='100%' style='object-fit:contain;'/></body></html>";
+        streamWebView.loadDataWithBaseURL(null, streamHtml, "text/html", "UTF-8", null);
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -107,10 +317,6 @@ public class MainActivity extends AppCompatActivity {
         streamSettings.setLoadWithOverviewMode(true);
         streamSettings.setUseWideViewPort(true);
         streamWebView.setWebViewClient(new WebViewClient());
-
-        String streamHtml = "<html><body style='margin:0;padding:0;background-color:black;'><img src='"
-                + STREAM_URL + "' width='100%' height='100%' style='object-fit:contain;'/></body></html>";
-        streamWebView.loadDataWithBaseURL(null, streamHtml, "text/html", "UTF-8", null);
 
         WebSettings mapSettings = mapWebView.getSettings();
         mapSettings.setJavaScriptEnabled(true);
@@ -128,7 +334,6 @@ public class MainActivity extends AppCompatActivity {
                 + "L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);"
                 + "L.marker([" + lat + ", " + lon + "]).addTo(map);"
                 + "</script></body></html>";
-
         mapWebView.loadDataWithBaseURL(null, mapHtml, "text/html", "UTF-8", null);
     }
 
@@ -160,7 +365,6 @@ public class MainActivity extends AppCompatActivity {
 
         btnPumpToggle.setOnClickListener(v -> {
             if (isLocked) return;
-
             isPumpActive = !isPumpActive;
             if (isPumpActive) {
                 sendCommand("PUMP", "ON");
@@ -171,18 +375,14 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void run() {
                         pumpColorToggle = !pumpColorToggle;
-                        if (pumpColorToggle) {
-                            btnPumpToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF008799));
-                        } else {
-                            btnPumpToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF00E1FF));
-                        }
-                        pumpBlinkHandler.postDelayed(this, 300);
+                        btnPumpToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(pumpColorToggle ? 0xFF008799 : 0xFF00E1FF));
+                        uiHandler.postDelayed(this, 300);
                     }
                 };
-                pumpBlinkHandler.post(pumpBlinkRunnable);
+                uiHandler.post(pumpBlinkRunnable);
             } else {
                 sendCommand("PUMP", "OFF");
-                if (pumpBlinkRunnable != null) pumpBlinkHandler.removeCallbacks(pumpBlinkRunnable);
+                if (pumpBlinkRunnable != null) uiHandler.removeCallbacks(pumpBlinkRunnable);
                 btnPumpToggle.setText("PUMP");
                 btnPumpToggle.setTextColor(0xFF000000);
                 btnPumpToggle.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF00E1FF));
@@ -194,7 +394,7 @@ public class MainActivity extends AppCompatActivity {
         btnCallRobot.setOnClickListener(v -> {
             if (isLocked) return;
             sendCommand("AUTOPILOT", "CALL_" + myLat + "_" + myLon);
-            Toast.makeText(this, "Calling robot to your location...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Calling robot...", Toast.LENGTH_SHORT).show();
         });
 
         btnEStop.setOnClickListener(v -> {
@@ -202,31 +402,51 @@ public class MainActivity extends AppCompatActivity {
             if (isLocked) {
                 sendCommand("ESTOP", "ON");
                 btnEStop.setBackgroundColor(0xFFB71C1C);
-                btnEStop.setText("UNLOCK CONTROLS");
+                btnEStop.setText("UNLOCK");
                 setViewGroupEnabled(controllerContainer, false);
             } else {
                 sendCommand("ESTOP", "OFF");
                 btnEStop.setBackgroundColor(0xFFD32F2F);
-                btnEStop.setText("E-STOP (LOCK)");
+                btnEStop.setText("E-STOP");
                 setViewGroupEnabled(controllerContainer, true);
+            }
+        });
+
+        btnForceSync.setOnClickListener(v -> {
+            if (!isCloudConnected && !developmentMode) {
+                Toast.makeText(this, "Couldn't Connect to Cloud", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (!isLoggedIn) {
+                syncLoginOverlay.setVisibility(View.VISIBLE);
+            } else {
+                performSync();
+            }
+        });
+    }
+
+    private void performSync() {
+        FirebaseDatabase.getInstance().goOffline();
+        FirebaseDatabase.getInstance().goOnline();
+        Toast.makeText(this, "Syncing offline data to cloud...", Toast.LENGTH_SHORT).show();
+
+        // Send a lightweight ping to the database to verify the connection
+        database.getReference("system/last_sync").setValue(System.currentTimeMillis(), new DatabaseReference.CompletionListener() {
+            @Override
+            public void onComplete(DatabaseError error, @NonNull DatabaseReference ref) {
+                if (error == null) {
+                    Toast.makeText(MainActivity.this, "Sync Successful!", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(MainActivity.this, "Sync Failed: Check Connection", Toast.LENGTH_SHORT).show();
+                }
             }
         });
     }
 
     private void blinkStopButton(Button btnStop) {
-        Handler handler = new Handler(Looper.getMainLooper());
-        int blinkCount = 5;
-        long delay = 150;
-
-        for (int i = 0; i < blinkCount * 2; i++) {
+        for (int i = 0; i < 10; i++) {
             final boolean isDark = (i % 2 == 0);
-            handler.postDelayed(() -> {
-                if (isDark) {
-                    btnStop.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF991F00));
-                } else {
-                    btnStop.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFFF3300));
-                }
-            }, i * delay);
+            uiHandler.postDelayed(() -> btnStop.setBackgroundTintList(android.content.res.ColorStateList.valueOf(isDark ? 0xFF991F00 : 0xFFFF3300)), i * 150L);
         }
     }
 
@@ -235,9 +455,7 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < viewGroup.getChildCount(); i++) {
             View child = viewGroup.getChildAt(i);
             child.setEnabled(enabled);
-            if (child instanceof ViewGroup) {
-                setViewGroupEnabled((ViewGroup) child, enabled);
-            }
+            if (child instanceof ViewGroup) setViewGroupEnabled((ViewGroup) child, enabled);
         }
     }
 
@@ -246,7 +464,6 @@ public class MainActivity extends AppCompatActivity {
         Button button = (Button) view;
         button.setOnTouchListener((v, event) -> {
             if (isLocked) return false;
-
             if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 sendCommand(part, cmd);
                 button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFFFFFFF));
@@ -264,121 +481,175 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // Writes the command directly to the Firebase Realtime Database
     private void sendCommand(String part, String cmd) {
+        // Queue to Firebase
         Map<String, Object> commandData = new HashMap<>();
         commandData.put("part", part);
         commandData.put("cmd", cmd);
         commandData.put("timestamp", System.currentTimeMillis());
         cmdRef.setValue(commandData);
+
+        // Fire direct HTTP to ESP32
+        networkExecutor.execute(() -> {
+            try {
+                URL url = new URL("http://" + robotIp + "/command?part=" + part + "&cmd=" + cmd);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(1000);
+                conn.getResponseCode();
+                conn.disconnect();
+            } catch (Exception ignored) {}
+        });
     }
 
-    private void startFirebaseListeners() {
-        // 1. Listen for Telemetry and Heartbeat
-        telemetryRef.addValueEventListener(new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                if (snapshot.exists()) {
-                    try {
-                        // The robot must push a timestamp with every telemetry upload
-                        if (snapshot.hasChild("timestamp")) {
-                            lastRobotHeartbeat = snapshot.child("timestamp").getValue(Long.class);
-                            updateRobotStatus(true);
-                        }
+    // Helper to verify ESP32 connectivity before locking in an IP
+    private interface ConnectionCallback {
+        void onResult(boolean success);
+    }
 
-                        int battery = snapshot.child("bat").getValue(Integer.class);
-                        int water = snapshot.child("water").getValue(Integer.class);
-                        double humidity = snapshot.child("hum").getValue(Double.class);
-                        double temp = snapshot.child("temp").getValue(Double.class);
-                        double lat = snapshot.child("lat").getValue(Double.class);
-                        double lon = snapshot.child("lon").getValue(Double.class);
-
-                        runOnUiThread(() -> {
-                            txtBattery.setText("🔋 Battery: " + battery + "%");
-                            txtWaterLevel.setText("💧 Tank: " + water + "%");
-                            txtHumidity.setText("☁️ Humid: " + humidity + " % RH");
-                            txtTemp.setText("🌡 Temp: " + temp + " °C");
-                            updateMapLocation(lat, lon);
-                        });
-                    } catch (Exception ignored) {}
+    private void testRobotConnection(String ip, ConnectionCallback callback) {
+        networkExecutor.execute(() -> {
+            boolean success = false;
+            try {
+                URL url = new URL("http://" + ip + "/telemetry"); // Pinging the data endpoint
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(2500);
+                if (conn.getResponseCode() == 200) {
+                    success = true;
                 }
+                conn.disconnect();
+            } catch (Exception e) {
+                success = false;
             }
-
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {}
+            final boolean finalSuccess = success;
+            uiHandler.post(() -> callback.onResult(finalSuccess));
         });
+    }
 
-        // 2. Listen for the App's Connection to Firebase
+    private void startLocalTelemetryPoller() {
+        if (telemetryPoller != null) return;
+        telemetryPoller = new Runnable() {
+            @Override
+            public void run() {
+                // If in dev mode, we can optionally fake connected status even if the HTTP poll fails
+                // but for now, we'll let it try to poll so it doesn't break normal behavior if a real ESP is connected.
+                networkExecutor.execute(() -> {
+                    try {
+                        URL url = new URL("http://" + robotIp + "/telemetry");
+                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                        conn.setRequestMethod("GET");
+                        conn.setConnectTimeout(1500);
+
+                        if (conn.getResponseCode() == 200) {
+                            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                            StringBuilder response = new StringBuilder();
+                            String line;
+                            while ((line = in.readLine()) != null) response.append(line);
+                            in.close();
+
+                            JSONObject data = new JSONObject(response.toString());
+
+                            Map<String, Object> teleMap = new HashMap<>();
+                            teleMap.put("bat", data.getInt("bat"));
+                            teleMap.put("water", data.getInt("water"));
+                            teleMap.put("hum", data.getDouble("hum"));
+                            teleMap.put("temp", data.getDouble("temp"));
+                            teleMap.put("lat", data.getDouble("lat"));
+                            teleMap.put("lon", data.getDouble("lon"));
+                            teleMap.put("timestamp", System.currentTimeMillis());
+                            telemetryHistoryRef.push().setValue(teleMap);
+
+                            uiHandler.post(() -> {
+                                lastRobotHeartbeat = System.currentTimeMillis();
+                                updateRobotStatus(true);
+                                txtBattery.setText("🔋 Battery: " + data.optInt("bat") + "%");
+                                txtWaterLevel.setText("💧 Tank: " + data.optInt("water") + "%");
+                                txtHumidity.setText("☁️ Humid: " + data.optDouble("hum") + " % RH");
+                                txtTemp.setText("🌡 Temp: " + data.optDouble("temp") + " °C");
+                                updateMapLocation(data.optDouble("lat"), data.optDouble("lon"));
+                            });
+                        }
+                        conn.disconnect();
+                    } catch (Exception e) {
+                        if (System.currentTimeMillis() - lastRobotHeartbeat > 3000) {
+                            uiHandler.post(() -> {
+                                // If developmentMode is true, we keep the robot status online to test the UI
+                                updateRobotStatus(developmentMode);
+                            });
+                        }
+                    }
+                });
+                uiHandler.postDelayed(this, 1500);
+            }
+        };
+        uiHandler.post(telemetryPoller);
+    }
+
+    private void startCloudListeners() {
         connectedRef.addValueEventListener(new ValueEventListener() {
             @Override
             public void onDataChange(@NonNull DataSnapshot snapshot) {
-                boolean connected = snapshot.getValue(Boolean.class);
-                updateCloudStatus(connected);
-            }
+                isCloudConnected = Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
+                uiHandler.post(() -> {
+                    if (isCloudConnected) {
+                        txtCloudStatus.setText("CLOUD CONNECTED");
+                        txtCloudStatus.setTextColor(0xFF4CAF50);
+                        cloudIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF4CAF50));
+                        btnForceSync.setEnabled(true);
+                        txtCloudError.setVisibility(View.GONE);
 
+                        // --- AUTO-SYNC DETECTION ---
+                        // If we were offline and just reconnected, Firebase is automatically syncing.
+                        if (wasOffline) {
+                            Toast.makeText(MainActivity.this, "Network detected. Auto-syncing...", Toast.LENGTH_SHORT).show();
+
+                            // Send a ping at the back of the line. When this ping succeeds,
+                            // it guarantees all previously queued offline commands have also synced.
+                            database.getReference("system/last_sync").setValue(System.currentTimeMillis(), new DatabaseReference.CompletionListener() {
+                                @Override
+                                public void onComplete(DatabaseError error, @NonNull DatabaseReference ref) {
+                                    if (error == null) {
+                                        Toast.makeText(MainActivity.this, "Auto-Sync Successful!", Toast.LENGTH_SHORT).show();
+                                    } else {
+                                        Toast.makeText(MainActivity.this, "Auto-Sync Failed", Toast.LENGTH_SHORT).show();
+                                    }
+                                }
+                            });
+                        }
+                        wasOffline = false; // Reset the tracker
+
+                    } else {
+                        wasOffline = true; // Mark that the app lost internet
+                        txtCloudStatus.setText("CLOUD OFFLINE");
+                        txtCloudStatus.setTextColor(0xFFF44336);
+                        cloudIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFF44336));
+                        btnForceSync.setEnabled(developmentMode); // Allow sync button if in dev mode
+                        txtCloudError.setVisibility(View.VISIBLE);
+                    }
+                });
+            }
             @Override
             public void onCancelled(@NonNull DatabaseError error) {}
-        });
-
-        // 3. Start the Robot Watchdog (Checks every 1 second)
-        watchdogRunnable = new Runnable() {
-            @Override
-            public void run() {
-                // If the last heartbeat is older than 4 seconds, mark Robot Offline
-                if (System.currentTimeMillis() - lastRobotHeartbeat > 4000) {
-                    updateRobotStatus(false);
-                }
-                watchdogHandler.postDelayed(this, 1000);
-            }
-        };
-        watchdogHandler.post(watchdogRunnable);
-    }
-
-    private void updateCloudStatus(boolean isConnected) {
-        runOnUiThread(() -> {
-            if (isConnected) {
-                txtCloudStatus.setText("CLOUD CONNECTED");
-                txtCloudStatus.setTextColor(0xFF4CAF50); // Green
-                cloudIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF4CAF50));
-            } else {
-                txtCloudStatus.setText("CLOUD OFFLINE");
-                txtCloudStatus.setTextColor(0xFFF44336); // Red
-                cloudIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFF44336));
-
-                // If cloud drops, we assume we lost the robot too
-                updateRobotStatus(false);
-            }
         });
     }
 
     private void updateRobotStatus(boolean isConnected) {
-        runOnUiThread(() -> {
-            if (isConnected) {
-                txtRobotStatus.setText("ROBOT ONLINE");
-                txtRobotStatus.setTextColor(0xFF4CAF50); // Green
-                robotIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF4CAF50));
-            } else {
-                txtRobotStatus.setText("ROBOT OFFLINE");
-                txtRobotStatus.setTextColor(0xFFF44336); // Red
-                robotIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFF44336));
-
-                // Clear telemetry screen if robot drops
-                txtBattery.setText("🔋 Battery: -- %");
-                txtWaterLevel.setText("💧 Tank: -- %");
-                txtHumidity.setText("☁️ Humid: -- % RH");
-                txtTemp.setText("🌡 Temp: -- °C");
-            }
-        });
+        isRobotConnected = isConnected;
+        if (isConnected) {
+            txtRobotStatus.setText("ROBOT ONLINE");
+            txtRobotStatus.setTextColor(0xFF4CAF50);
+            robotIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF4CAF50));
+        } else {
+            txtRobotStatus.setText("ROBOT OFFLINE");
+            txtRobotStatus.setTextColor(0xFFF44336);
+            robotIndicator.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFF44336));
+        }
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (pumpBlinkHandler != null && pumpBlinkRunnable != null) {
-            pumpBlinkHandler.removeCallbacks(pumpBlinkRunnable);
-        }
-        if (watchdogHandler != null && watchdogRunnable != null) {
-            watchdogHandler.removeCallbacks(watchdogRunnable);
-        }
+        uiHandler.removeCallbacksAndMessages(null);
     }
 }
