@@ -54,7 +54,6 @@
                         android:textStyle="bold" />
                 </LinearLayout>
 
-                <!-- Red error text when cloud fails -->
                 <TextView
                     android:id="@+id/txtCloudError"
                     android:layout_width="wrap_content"
@@ -133,7 +132,7 @@
                 android:background="#1E1E1E" />
         </LinearLayout>
 
-        <!-- Telemetry HUD Card -->
+        <!-- Telemetry & Compass HUD Card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -146,18 +145,102 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="8dp">
+                android:orientation="horizontal"
+                android:baselineAligned="false"
+                android:padding="8dp"
+                android:weightSum="3">
 
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:weightSum="2">
-                    <TextView android:id="@+id/txtBattery" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="🔋 Battery: -- %" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
-                    <TextView android:id="@+id/txtWaterLevel" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="💧 Tank: -- %" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
+                <!-- Sensor Metrics (Left) -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="2.1"
+                    android:orientation="vertical"
+                    android:gravity="center_vertical">
+
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:weightSum="2">
+                        <TextView android:id="@+id/txtBattery" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="🔋 Bat: -- %" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
+                        <TextView android:id="@+id/txtWaterLevel" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="💧 Tank: -- %" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
+                    </LinearLayout>
+
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:weightSum="2" android:layout_marginTop="6dp">
+                        <TextView android:id="@+id/txtHumidity" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="☁️ Hum: -- %" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
+                        <TextView android:id="@+id/txtTemp" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="🌡 Temp: -- °C" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
+                    </LinearLayout>
                 </LinearLayout>
 
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:weightSum="2" android:layout_marginTop="4dp">
-                    <TextView android:id="@+id/txtHumidity" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="☁️ Humid: -- % RH" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
-                    <TextView android:id="@+id/txtTemp" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="🌡 Temp: -- °C" android:textColor="#FFFFFF" android:textSize="13sp" android:textStyle="bold"/>
+                <!-- Compass Panel (Right) -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="0.9"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <!-- Larger, highly readable Heading text -->
+                    <TextView
+                        android:id="@+id/txtHeadingText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="--°"
+                        android:textColor="#FF9800"
+                        android:textSize="13sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="3dp"/>
+
+                    <!-- Larger Compass Dial UI -->
+                    <com.google.android.material.card.MaterialCardView
+                        android:layout_width="50dp"
+                        android:layout_height="50dp"
+                        app:cardCornerRadius="25dp"
+                        app:cardBackgroundColor="#0A0A0A"
+                        app:strokeColor="#555555"
+                        app:strokeWidth="2dp">
+
+                        <FrameLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="match_parent">
+
+                            <!-- Fixed Direction Letters -->
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="N" android:textColor="#888888" android:textSize="9sp" android:textStyle="bold" android:layout_gravity="top|center_horizontal" android:layout_marginTop="2dp"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="S" android:textColor="#888888" android:textSize="9sp" android:textStyle="bold" android:layout_gravity="bottom|center_horizontal" android:layout_marginBottom="2dp"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="W" android:textColor="#888888" android:textSize="9sp" android:textStyle="bold" android:layout_gravity="center_vertical|start" android:layout_marginStart="3dp"/>
+                            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="E" android:textColor="#888888" android:textSize="9sp" android:textStyle="bold" android:layout_gravity="center_vertical|end" android:layout_marginEnd="3dp"/>
+
+                            <!-- Rotating Needle Layer -->
+                            <FrameLayout
+                                android:id="@+id/compassDial"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent">
+
+                                <!-- Red North Pointer -->
+                                <View
+                                    android:layout_width="3dp"
+                                    android:layout_height="18dp"
+                                    android:layout_gravity="top|center_horizontal"
+                                    android:layout_marginTop="8dp"
+                                    android:background="#F44336"/>
+
+                                <!-- White South Pointer -->
+                                <View
+                                    android:layout_width="3dp"
+                                    android:layout_height="18dp"
+                                    android:layout_gravity="bottom|center_horizontal"
+                                    android:layout_marginBottom="8dp"
+                                    android:background="#EEEEEE"/>
+
+                                <!-- Center Pivot Dot -->
+                                <View
+                                    android:layout_width="6dp"
+                                    android:layout_height="6dp"
+                                    android:layout_gravity="center"
+                                    android:background="@drawable/status_dot"
+                                    android:backgroundTint="#FF9800"/>
+                            </FrameLayout>
+                        </FrameLayout>
+                    </com.google.android.material.card.MaterialCardView>
                 </LinearLayout>
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -302,7 +385,6 @@
     <!-- ========================================== -->
     <!-- MAIN FULLSCREEN LOGIN OVERLAY (Layer 1)    -->
     <!-- ========================================== -->
-    <!-- MOVED ABOVE THE POPUPS SO POPUPS DRAW ON TOP -->
     <LinearLayout
         android:id="@+id/loginOverlay"
         android:layout_width="match_parent"
@@ -343,8 +425,19 @@
             android:textColorHint="#9FB3C8"
             android:textColor="#FFFFFF"
             android:backgroundTint="#4A6789"
-            android:layout_marginBottom="24dp"
+            android:layout_marginBottom="16dp"
             android:inputType="textPassword"/>
+
+        <!-- NEW: No Internet Warning -->
+        <TextView
+            android:id="@+id/txtNoInternet"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="No Internet Detected"
+            android:textColor="#F44336"
+            android:textStyle="bold"
+            android:visibility="gone"
+            android:layout_marginBottom="8dp"/>
 
         <Button
             android:id="@+id/btnLogin"
