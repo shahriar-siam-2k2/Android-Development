@@ -162,6 +162,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupLoginSystem() {
         btnLogin.setOnClickListener(v -> {
+            if (!isCloudConnected && !developmentMode) return;
+
             String user = inputUsername.getText().toString().trim();
             String pass = inputPassword.getText().toString();
 
@@ -188,6 +190,9 @@ public class MainActivity extends AppCompatActivity {
                             act.put("device", "Android");
                             database.getReference("users").child(user).child("activity_history").push().setValue(act);
                             database.getReference("users").child(user).child("last_login").setValue(System.currentTimeMillis());
+
+                            // FIX: Save Android as the login device to the database
+                            database.getReference("users").child(user).child("last_login_device").setValue("Android");
 
                             unlockApp();
                         } else {
