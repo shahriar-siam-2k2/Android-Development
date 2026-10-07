@@ -80,7 +80,7 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean isPumpActive = false;
     private boolean isLocked = false;
-    
+
     private double myLat = 23.7937;
     private double myLon = 90.4066;
 
@@ -93,7 +93,6 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         try {
-            // Enable Firebase's native offline persistence
             FirebaseDatabase.getInstance().setPersistenceEnabled(true);
         } catch (Exception ignored) {}
 
@@ -108,8 +107,8 @@ public class MainActivity extends AppCompatActivity {
         setupWebViews();
 
         mainAppContent.setVisibility(View.INVISIBLE);
-        loadMapData(); 
-        
+        loadMapData();
+
         setupLoginSystem();
         setupChassisControls();
         setupActuatorControls();
@@ -163,7 +162,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupLoginSystem() {
         btnLogin.setOnClickListener(v -> {
-            // Allows login attempts even when offline if the profile is cached
             String user = inputUsername.getText().toString().trim();
             String pass = inputPassword.getText().toString();
 
@@ -187,6 +185,7 @@ public class MainActivity extends AppCompatActivity {
                             Map<String, Object> act = new HashMap<>();
                             act.put("action", "Logged in");
                             act.put("timestamp", System.currentTimeMillis());
+                            act.put("device", "Android");
                             database.getReference("users").child(user).child("activity_history").push().setValue(act);
                             database.getReference("users").child(user).child("last_login").setValue(System.currentTimeMillis());
 
@@ -233,12 +232,13 @@ public class MainActivity extends AppCompatActivity {
                 Map<String, Object> act = new HashMap<>();
                 act.put("action", "Logged out");
                 act.put("timestamp", System.currentTimeMillis());
+                act.put("device", "Android");
                 database.getReference("users").child(currentUsername).child("activity_history").push().setValue(act);
             }
 
             isLoggedIn = false;
             currentUsername = "";
-            
+
             loginOverlay.setVisibility(View.VISIBLE);
             mainAppContent.setVisibility(View.INVISIBLE);
             streamWebView.loadUrl("about:blank");
@@ -345,9 +345,9 @@ public class MainActivity extends AppCompatActivity {
                 + "<style>body { margin:0; padding:0; background:#DDE3E8; } #map { width:100vw; height:100vh; } .leaflet-control-attribution { display:none !important; }</style></head>"
                 + "<body><div id='map'></div><script>"
                 + "var map = L.map('map', {zoomControl: false}).setView([" + myLat + ", " + myLon + "], 16);"
-                
+
                 + "var tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { keepBuffer: 16, updateWhenIdle: false }).addTo(map);"
-                
+
                 + "var isDownloading = false;"
                 + "tiles.on('loading', function() { "
                 + "  if(!isDownloading) { isDownloading = true; if(window.Android) Android.showToast('Downloading offline map...'); }"
@@ -355,10 +355,10 @@ public class MainActivity extends AppCompatActivity {
                 + "tiles.on('load', function() { "
                 + "  if(isDownloading) { isDownloading = false; if(window.Android) Android.showToast('Map is ready for offline use.'); }"
                 + "});"
-                
+
                 + "var marker = L.marker([" + myLat + ", " + myLon + "]).addTo(map);"
                 + "function updateLocation(lat, lon) { map.setView([lat, lon]); marker.setLatLng([lat, lon]); }"
-                
+
                 + "setTimeout(function(){ map.invalidateSize(); }, 500);"
                 + "</script></body></html>";
 
@@ -463,7 +463,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void performSync() {
-        // FIX: Removed goOffline() and goOnline() calls to prevent infinite loops and resetting the Firebase queue
         Toast.makeText(this, "Syncing offline data to cloud...", Toast.LENGTH_SHORT).show();
 
         if (isLoggedIn && !currentUsername.isEmpty()) {
@@ -481,6 +480,7 @@ public class MainActivity extends AppCompatActivity {
                         cmdLog.put("command", obj.getString("command"));
                         cmdLog.put("timestamp", obj.getLong("timestamp"));
                         cmdLog.put("received", "yes");
+                        cmdLog.put("device", obj.optString("device", "Android"));
                         database.getReference("users").child(currentUsername).child("command_history").push().setValue(cmdLog);
 
                         if (i == arr.length() - 1) {
@@ -555,17 +555,15 @@ public class MainActivity extends AppCompatActivity {
         commandData.put("timestamp", ts);
         cmdRef.setValue(commandData);
 
-        if (isLoggedIn && !currentUsername.isEmpty()) {
-            // FIX: If logged in, we rely entirely on Firebase's native offline queuing system
-            // This prevents manual queue conflicts and ensures data populates immediately when online.
+        if (isLoggedIn && !currentUsername.isEmpty() && isCloudConnected) {
             Map<String, Object> cmdLog = new HashMap<>();
             cmdLog.put("part", part);
             cmdLog.put("command", cmd);
             cmdLog.put("timestamp", ts);
             cmdLog.put("received", "yes");
+            cmdLog.put("device", "Android");
             database.getReference("users").child(currentUsername).child("command_history").push().setValue(cmdLog);
         } else {
-            // Use manual SharedPreferences queue ONLY if Bypass Mode is active (Not Logged In)
             SharedPreferences prefs = getSharedPreferences("OfflineQueue", MODE_PRIVATE);
             try {
                 String existing = prefs.getString("cmds", "[]");
@@ -574,6 +572,7 @@ public class MainActivity extends AppCompatActivity {
                 obj.put("part", part);
                 obj.put("command", cmd);
                 obj.put("timestamp", ts);
+                obj.put("device", "Android");
                 arr.put(obj);
                 prefs.edit().putString("cmds", arr.toString()).apply();
             } catch (Exception ignored) {}
@@ -717,8 +716,7 @@ public class MainActivity extends AppCompatActivity {
                         mapWebView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
 
                         txtNoInternet.setVisibility(View.GONE);
-                        
-                        // Keeps login UI active if app was disconnected while on the login page
+
                         btnLogin.setEnabled(true);
                         btnLogin.setBackgroundTintList(ColorStateList.valueOf(0xFF1976D2));
 
@@ -737,6 +735,8 @@ public class MainActivity extends AppCompatActivity {
                         mapWebView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
 
                         txtNoInternet.setVisibility(View.VISIBLE);
+                        btnLogin.setEnabled(false);
+                        btnLogin.setBackgroundTintList(ColorStateList.valueOf(Color.GRAY));
 
                         wasOffline = true;
 
