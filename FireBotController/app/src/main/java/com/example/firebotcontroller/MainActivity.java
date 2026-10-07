@@ -80,6 +80,7 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean isPumpActive = false;
     private boolean isLocked = false;
+    
     private double myLat = 23.7937;
     private double myLon = 90.4066;
 
@@ -92,6 +93,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
 
         try {
+            // Enable Firebase's native offline persistence
             FirebaseDatabase.getInstance().setPersistenceEnabled(true);
         } catch (Exception ignored) {}
 
@@ -103,8 +105,12 @@ public class MainActivity extends AppCompatActivity {
         cmdRef.keepSynced(true);
 
         bindViews();
-        setupLoginSystem();
         setupWebViews();
+
+        mainAppContent.setVisibility(View.INVISIBLE);
+        loadMapData(); 
+        
+        setupLoginSystem();
         setupChassisControls();
         setupActuatorControls();
         setupSpecialButtons();
@@ -157,8 +163,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupLoginSystem() {
         btnLogin.setOnClickListener(v -> {
-            if (!isCloudConnected && !developmentMode) return;
-
+            // Allows login attempts even when offline if the profile is cached
             String user = inputUsername.getText().toString().trim();
             String pass = inputPassword.getText().toString();
 
@@ -190,7 +195,7 @@ public class MainActivity extends AppCompatActivity {
                             Toast.makeText(MainActivity.this, "Wrong password", Toast.LENGTH_SHORT).show();
                         }
                     } else {
-                        Toast.makeText(MainActivity.this, "User not found", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(MainActivity.this, "User not found or un-cached offline", Toast.LENGTH_SHORT).show();
                     }
                 }
                 @Override
@@ -206,6 +211,8 @@ public class MainActivity extends AppCompatActivity {
         });
 
         btnExit.setOnClickListener(v -> {
+            Toast.makeText(MainActivity.this, "Disconnected to Fire Bot", Toast.LENGTH_SHORT).show();
+
             if (telemetryPoller != null) {
                 uiHandler.removeCallbacks(telemetryPoller);
                 telemetryPoller = null;
@@ -231,21 +238,17 @@ public class MainActivity extends AppCompatActivity {
 
             isLoggedIn = false;
             currentUsername = "";
+            
             loginOverlay.setVisibility(View.VISIBLE);
-            mainAppContent.setVisibility(View.GONE);
+            mainAppContent.setVisibility(View.INVISIBLE);
             streamWebView.loadUrl("about:blank");
-            Toast.makeText(this, "Logged out", Toast.LENGTH_SHORT).show();
         });
     }
 
     private void setupOverlays() {
         btnConnectManual.setOnClickListener(v -> {
-            if (isRobotConnected && !developmentMode) {
-                Toast.makeText(this, "Robot is already connected", Toast.LENGTH_SHORT).show();
-            } else {
-                currentIpContext = IpDialogContext.MANUAL;
-                ipDialogOverlay.setVisibility(View.VISIBLE);
-            }
+            currentIpContext = IpDialogContext.MANUAL;
+            ipDialogOverlay.setVisibility(View.VISIBLE);
         });
 
         btnCancelIp.setOnClickListener(v -> ipDialogOverlay.setVisibility(View.GONE));
@@ -304,16 +307,13 @@ public class MainActivity extends AppCompatActivity {
         loginOverlay.setVisibility(View.GONE);
         mainAppContent.setVisibility(View.VISIBLE);
         loadVideoStream();
-        loadMapData(isCloudConnected); // FIX: Passes internet state to the map
         startTelemetryCloudListener();
         startLocalTelemetryPoller();
     }
 
     private void loadVideoStream() {
-        // FIX: Pointing to the dedicated Dual-Core video port (81)
         String streamHtml = "<html><body style='margin:0;padding:0;background-color:black;'><img src='http://"
                 + robotIp + ":81/stream' width='100%' height='100%' style='object-fit:contain;'/></body></html>";
-
         streamWebView.loadDataWithBaseURL("http://" + robotIp, streamHtml, "text/html", "UTF-8", null);
     }
 
@@ -328,34 +328,47 @@ public class MainActivity extends AppCompatActivity {
 
         WebSettings mapSettings = mapWebView.getSettings();
         mapSettings.setJavaScriptEnabled(true);
+        mapSettings.setDomStorageEnabled(true);
+        mapSettings.setDatabaseEnabled(true);
+        mapSettings.setCacheMode(WebSettings.LOAD_DEFAULT);
+
+        mapWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        mapWebView.addJavascriptInterface(new WebAppInterface(), "Android");
         mapWebView.setWebViewClient(new WebViewClient());
     }
 
-    private void loadMapData(boolean isOnline) {
-        // FIX: Display a clean offline fallback if there is no internet
-        if (!isOnline && !developmentMode) {
-            String offlineHtml = "<html><body style='margin:0;padding:0;background:#DDE3E8;display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif;color:#586977;'><h4>Map Unavailable Offline</h4></body></html>";
-            mapWebView.loadDataWithBaseURL(null, offlineHtml, "text/html", "UTF-8", null);
-            return;
-        }
-
-        String mapHtml = "<html><head><meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no' />"
+    private void loadMapData() {
+        String mapHtml = "<!DOCTYPE html><html><head>"
+                + "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no' />"
                 + "<link rel='stylesheet' href='https://unpkg.com/leaflet/dist/leaflet.css' />"
                 + "<script src='https://unpkg.com/leaflet/dist/leaflet.js'></script>"
                 + "<style>body { margin:0; padding:0; background:#DDE3E8; } #map { width:100vw; height:100vh; } .leaflet-control-attribution { display:none !important; }</style></head>"
                 + "<body><div id='map'></div><script>"
                 + "var map = L.map('map', {zoomControl: false}).setView([" + myLat + ", " + myLon + "], 16);"
-                + "L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);"
+                
+                + "var tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { keepBuffer: 16, updateWhenIdle: false }).addTo(map);"
+                
+                + "var isDownloading = false;"
+                + "tiles.on('loading', function() { "
+                + "  if(!isDownloading) { isDownloading = true; if(window.Android) Android.showToast('Downloading offline map...'); }"
+                + "});"
+                + "tiles.on('load', function() { "
+                + "  if(isDownloading) { isDownloading = false; if(window.Android) Android.showToast('Map is ready for offline use.'); }"
+                + "});"
+                
                 + "var marker = L.marker([" + myLat + ", " + myLon + "]).addTo(map);"
                 + "function updateLocation(lat, lon) { map.setView([lat, lon]); marker.setLatLng([lat, lon]); }"
+                
+                + "setTimeout(function(){ map.invalidateSize(); }, 500);"
                 + "</script></body></html>";
-        mapWebView.loadDataWithBaseURL(null, mapHtml, "text/html", "UTF-8", null);
+
+        mapWebView.loadDataWithBaseURL("https://firebot.local", mapHtml, "text/html", "UTF-8", null);
     }
 
     private void updateMapLocation(double lat, double lon) {
-        if (isCloudConnected) {
-            mapWebView.evaluateJavascript("if(typeof updateLocation === 'function') { updateLocation(" + lat + ", " + lon + "); }", null);
-        }
+        myLat = lat;
+        myLon = lon;
+        mapWebView.evaluateJavascript("if(typeof updateLocation === 'function') { updateLocation(" + lat + ", " + lon + "); }", null);
     }
 
     private String getHeadingText(double deg) {
@@ -450,8 +463,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void performSync() {
-        FirebaseDatabase.getInstance().goOffline();
-        FirebaseDatabase.getInstance().goOnline();
+        // FIX: Removed goOffline() and goOnline() calls to prevent infinite loops and resetting the Firebase queue
         Toast.makeText(this, "Syncing offline data to cloud...", Toast.LENGTH_SHORT).show();
 
         if (isLoggedIn && !currentUsername.isEmpty()) {
@@ -543,7 +555,9 @@ public class MainActivity extends AppCompatActivity {
         commandData.put("timestamp", ts);
         cmdRef.setValue(commandData);
 
-        if (isLoggedIn && !currentUsername.isEmpty() && isCloudConnected) {
+        if (isLoggedIn && !currentUsername.isEmpty()) {
+            // FIX: If logged in, we rely entirely on Firebase's native offline queuing system
+            // This prevents manual queue conflicts and ensures data populates immediately when online.
             Map<String, Object> cmdLog = new HashMap<>();
             cmdLog.put("part", part);
             cmdLog.put("command", cmd);
@@ -551,6 +565,7 @@ public class MainActivity extends AppCompatActivity {
             cmdLog.put("received", "yes");
             database.getReference("users").child(currentUsername).child("command_history").push().setValue(cmdLog);
         } else {
+            // Use manual SharedPreferences queue ONLY if Bypass Mode is active (Not Logged In)
             SharedPreferences prefs = getSharedPreferences("OfflineQueue", MODE_PRIVATE);
             try {
                 String existing = prefs.getString("cmds", "[]");
@@ -634,8 +649,6 @@ public class MainActivity extends AppCompatActivity {
                         double lat = snapshot.child("lat").getValue(Double.class);
                         double lon = snapshot.child("lon").getValue(Double.class);
                         if (Math.abs(myLat - lat) > 0.0001 || Math.abs(myLon - lon) > 0.0001) {
-                            myLat = lat;
-                            myLon = lon;
                             updateMapLocation(lat, lon);
                         }
                     }
@@ -701,7 +714,11 @@ public class MainActivity extends AppCompatActivity {
                 isCloudConnected = Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
                 uiHandler.post(() -> {
                     if (isCloudConnected) {
+                        mapWebView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
+
                         txtNoInternet.setVisibility(View.GONE);
+                        
+                        // Keeps login UI active if app was disconnected while on the login page
                         btnLogin.setEnabled(true);
                         btnLogin.setBackgroundTintList(ColorStateList.valueOf(0xFF1976D2));
 
@@ -712,19 +729,15 @@ public class MainActivity extends AppCompatActivity {
                         txtCloudError.setVisibility(View.GONE);
 
                         if (wasOffline) {
-                            loadMapData(true); // FIX: Reload real map when internet returns
                             performSync();
                         }
                         wasOffline = false;
 
                     } else {
-                        txtNoInternet.setVisibility(View.VISIBLE);
-                        btnLogin.setEnabled(false);
-                        btnLogin.setBackgroundTintList(ColorStateList.valueOf(Color.GRAY));
+                        mapWebView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
 
-                        if (!wasOffline) {
-                            loadMapData(false); // FIX: Show offline placeholder when internet drops
-                        }
+                        txtNoInternet.setVisibility(View.VISIBLE);
+
                         wasOffline = true;
 
                         txtCloudStatus.setText("CLOUD OFFLINE");
@@ -761,6 +774,13 @@ public class MainActivity extends AppCompatActivity {
         }
         if (telemetryListener != null) {
             database.getReference("telemetry").child(robotIp.replace(".", "_")).removeEventListener(telemetryListener);
+        }
+    }
+
+    public class WebAppInterface {
+        @android.webkit.JavascriptInterface
+        public void showToast(String message) {
+            uiHandler.post(() -> Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show());
         }
     }
 }
