@@ -81,6 +81,10 @@ public class MainActivity extends AppCompatActivity {
     private boolean isPumpActive = false;
     private boolean isLocked = false;
 
+<<<<<<< Updated upstream
+=======
+    // Default location set to Dhaka
+>>>>>>> Stashed changes
     private double myLat = 23.7937;
     private double myLon = 90.4066;
 
@@ -106,7 +110,15 @@ public class MainActivity extends AppCompatActivity {
         bindViews();
         setupWebViews();
 
+<<<<<<< Updated upstream
         mainAppContent.setVisibility(View.INVISIBLE);
+=======
+        // FIX: Force the main app content to be INVISIBLE instead of GONE.
+        // This keeps it hidden behind the login screen, but gives the Map WebView
+        // physical dimensions so it can start downloading the map tiles secretly right now.
+        mainAppContent.setVisibility(View.INVISIBLE);
+
+>>>>>>> Stashed changes
         loadMapData();
 
         setupLoginSystem();
@@ -244,6 +256,10 @@ public class MainActivity extends AppCompatActivity {
             isLoggedIn = false;
             currentUsername = "";
 
+<<<<<<< Updated upstream
+=======
+            // Restores the login screen and hides the app (but leaves it INVISIBLE so the map survives)
+>>>>>>> Stashed changes
             loginOverlay.setVisibility(View.VISIBLE);
             mainAppContent.setVisibility(View.INVISIBLE);
             streamWebView.loadUrl("about:blank");
@@ -310,7 +326,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void unlockApp() {
         loginOverlay.setVisibility(View.GONE);
-        mainAppContent.setVisibility(View.VISIBLE);
+        mainAppContent.setVisibility(View.VISIBLE); // Reveals the pre-loaded map
         loadVideoStream();
         startTelemetryCloudListener();
         startLocalTelemetryPoller();
@@ -343,6 +359,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadMapData() {
+<<<<<<< Updated upstream
+=======
+        // FIX: The radar fallback is permanently deleted. This street map HTML is loaded
+        // unconditionally at startup and is cached locally.
+>>>>>>> Stashed changes
         String mapHtml = "<!DOCTYPE html><html><head>"
                 + "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no' />"
                 + "<link rel='stylesheet' href='https://unpkg.com/leaflet/dist/leaflet.css' />"
@@ -351,6 +372,10 @@ public class MainActivity extends AppCompatActivity {
                 + "<body><div id='map'></div><script>"
                 + "var map = L.map('map', {zoomControl: false}).setView([" + myLat + ", " + myLon + "], 16);"
 
+<<<<<<< Updated upstream
+=======
+                // Downloads tiles in the background with keepBuffer
+>>>>>>> Stashed changes
                 + "var tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { keepBuffer: 16, updateWhenIdle: false }).addTo(map);"
 
                 + "var isDownloading = false;"
@@ -364,6 +389,10 @@ public class MainActivity extends AppCompatActivity {
                 + "var marker = L.marker([" + myLat + ", " + myLon + "]).addTo(map);"
                 + "function updateLocation(lat, lon) { map.setView([lat, lon]); marker.setLatLng([lat, lon]); }"
 
+<<<<<<< Updated upstream
+=======
+                // Forces Leaflet to re-calculate its size to ensure it fetches tiles while hidden
+>>>>>>> Stashed changes
                 + "setTimeout(function(){ map.invalidateSize(); }, 500);"
                 + "</script></body></html>";
 
@@ -718,6 +747,10 @@ public class MainActivity extends AppCompatActivity {
                 isCloudConnected = Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
                 uiHandler.post(() -> {
                     if (isCloudConnected) {
+<<<<<<< Updated upstream
+=======
+                        // FIX: Pulling map tiles from network to update cache
+>>>>>>> Stashed changes
                         mapWebView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
 
                         txtNoInternet.setVisibility(View.GONE);
@@ -737,6 +770,10 @@ public class MainActivity extends AppCompatActivity {
                         wasOffline = false;
 
                     } else {
+<<<<<<< Updated upstream
+=======
+                        // FIX: Forcing WebView to load purely from saved Cache
+>>>>>>> Stashed changes
                         mapWebView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
 
                         txtNoInternet.setVisibility(View.VISIBLE);
