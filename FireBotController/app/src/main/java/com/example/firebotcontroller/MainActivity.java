@@ -7,6 +7,7 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -42,6 +43,7 @@ import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
+    // FIX 1: Set development mode to FALSE so it strictly requires a real IP connection
     private boolean developmentMode = false;
     private String robotIp = "192.168.4.1";
 
@@ -67,8 +69,8 @@ public class MainActivity extends AppCompatActivity {
     private View mainAppContent;
     private EditText inputUsername, inputPassword;
     private WebView streamWebView, mapWebView;
-    private TextView txtBattery, txtWaterLevel, txtHumidity, txtTemp, txtHeadingText, txtNoInternet;
-    private View compassDial;
+    private TextView txtBattery, txtWaterLevel, txtHumidity, txtTemp, txtHeadingText, txtNoInternet, txtVideoLatency, txtCmdLatency;
+    private View compassDial, streamOfflineOverlay, mapOfflineOverlay;
     private TextView txtCloudStatus, txtRobotStatus, txtCloudError;
     private View cloudIndicator, robotIndicator;
     private LinearLayout controllerContainer;
@@ -81,10 +83,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean isPumpActive = false;
     private boolean isLocked = false;
 
-<<<<<<< Updated upstream
-=======
     // Default location set to Dhaka
->>>>>>> Stashed changes
     private double myLat = 23.7937;
     private double myLon = 90.4066;
 
@@ -110,15 +109,7 @@ public class MainActivity extends AppCompatActivity {
         bindViews();
         setupWebViews();
 
-<<<<<<< Updated upstream
         mainAppContent.setVisibility(View.INVISIBLE);
-=======
-        // FIX: Force the main app content to be INVISIBLE instead of GONE.
-        // This keeps it hidden behind the login screen, but gives the Map WebView
-        // physical dimensions so it can start downloading the map tiles secretly right now.
-        mainAppContent.setVisibility(View.INVISIBLE);
-
->>>>>>> Stashed changes
         loadMapData();
 
         setupLoginSystem();
@@ -127,6 +118,9 @@ public class MainActivity extends AppCompatActivity {
         setupSpecialButtons();
         setupOverlays();
         startCloudListeners();
+
+        // FIX 2: Force the app to completely start in the OFFLINE state.
+        updateRobotStatus(false);
     }
 
     private void bindViews() {
@@ -134,6 +128,9 @@ public class MainActivity extends AppCompatActivity {
         mainAppContent = findViewById(R.id.mainAppContent);
         inputUsername = findViewById(R.id.inputUsername);
         inputPassword = findViewById(R.id.inputPassword);
+
+        streamOfflineOverlay = findViewById(R.id.streamOfflineOverlay);
+        mapOfflineOverlay = findViewById(R.id.mapOfflineOverlay);
 
         streamWebView = findViewById(R.id.streamWebView);
         mapWebView = findViewById(R.id.mapWebView);
@@ -143,6 +140,9 @@ public class MainActivity extends AppCompatActivity {
         txtTemp = findViewById(R.id.txtTemp);
         txtHeadingText = findViewById(R.id.txtHeadingText);
         compassDial = findViewById(R.id.compassDial);
+
+        txtVideoLatency = findViewById(R.id.txtVideoLatency);
+        txtCmdLatency = findViewById(R.id.txtCmdLatency);
 
         txtCloudStatus = findViewById(R.id.txtCloudStatus);
         txtCloudError = findViewById(R.id.txtCloudError);
@@ -202,11 +202,9 @@ public class MainActivity extends AppCompatActivity {
                             act.put("device", "Android");
                             database.getReference("users").child(user).child("activity_history").push().setValue(act);
                             database.getReference("users").child(user).child("last_login").setValue(System.currentTimeMillis());
-
-                            // FIX: Save Android as the login device to the database
                             database.getReference("users").child(user).child("last_login_device").setValue("Android");
 
-                            unlockApp();
+                            unlockApp(false); // False means we ARE connected to cloud
                         } else {
                             Toast.makeText(MainActivity.this, "Wrong password", Toast.LENGTH_SHORT).show();
                         }
@@ -233,6 +231,11 @@ public class MainActivity extends AppCompatActivity {
                 uiHandler.removeCallbacks(telemetryPoller);
                 telemetryPoller = null;
             }
+            if (telemetryListener != null) {
+                database.getReference("telemetry").child(robotIp.replace(".", "_")).removeEventListener(telemetryListener);
+                telemetryListener = null;
+            }
+            updateRobotStatus(false);
 
             networkExecutor.execute(() -> {
                 try {
@@ -256,10 +259,6 @@ public class MainActivity extends AppCompatActivity {
             isLoggedIn = false;
             currentUsername = "";
 
-<<<<<<< Updated upstream
-=======
-            // Restores the login screen and hides the app (but leaves it INVISIBLE so the map survives)
->>>>>>> Stashed changes
             loginOverlay.setVisibility(View.VISIBLE);
             mainAppContent.setVisibility(View.INVISIBLE);
             streamWebView.loadUrl("about:blank");
@@ -278,21 +277,28 @@ public class MainActivity extends AppCompatActivity {
             String ip = inputManualIp.getText().toString().trim();
             if (ip.isEmpty()) return;
 
-            Toast.makeText(this, "Attempting connection...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Testing connection to " + ip + "...", Toast.LENGTH_SHORT).show();
+
             testRobotConnection(ip, success -> {
                 if (success || developmentMode) {
                     robotIp = ip;
                     ipDialogOverlay.setVisibility(View.GONE);
                     Toast.makeText(MainActivity.this, "Connected successfully!", Toast.LENGTH_SHORT).show();
+
+                    // FIX 3: Instantly drop the offline overlays once IP is verified
+                    lastRobotHeartbeat = System.currentTimeMillis();
+                    updateRobotStatus(true);
+
                     if (currentIpContext == IpDialogContext.BYPASS) {
                         isLoggedIn = false;
-                        unlockApp();
+                        unlockApp(true); // True means offline bypass
                     } else {
+                        // Restart local poller and stream if they changed IP while logged in
                         loadVideoStream();
-                        startTelemetryCloudListener();
+                        startLocalTelemetryPoller();
                     }
                 } else {
-                    Toast.makeText(MainActivity.this, "Failed to connect to IP", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "Robot not found at this IP", Toast.LENGTH_SHORT).show();
                 }
             });
         });
@@ -324,12 +330,17 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void unlockApp() {
+    // FIX 4: Separated cloud behavior from offline bypass behavior
+    private void unlockApp(boolean isOfflineBypass) {
         loginOverlay.setVisibility(View.GONE);
-        mainAppContent.setVisibility(View.VISIBLE); // Reveals the pre-loaded map
+        mainAppContent.setVisibility(View.VISIBLE);
+
         loadVideoStream();
-        startTelemetryCloudListener();
         startLocalTelemetryPoller();
+
+        if (!isOfflineBypass) {
+            startTelemetryCloudListener();
+        }
     }
 
     private void loadVideoStream() {
@@ -359,11 +370,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadMapData() {
-<<<<<<< Updated upstream
-=======
-        // FIX: The radar fallback is permanently deleted. This street map HTML is loaded
-        // unconditionally at startup and is cached locally.
->>>>>>> Stashed changes
         String mapHtml = "<!DOCTYPE html><html><head>"
                 + "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no' />"
                 + "<link rel='stylesheet' href='https://unpkg.com/leaflet/dist/leaflet.css' />"
@@ -371,13 +377,7 @@ public class MainActivity extends AppCompatActivity {
                 + "<style>body { margin:0; padding:0; background:#DDE3E8; } #map { width:100vw; height:100vh; } .leaflet-control-attribution { display:none !important; }</style></head>"
                 + "<body><div id='map'></div><script>"
                 + "var map = L.map('map', {zoomControl: false}).setView([" + myLat + ", " + myLon + "], 16);"
-
-<<<<<<< Updated upstream
-=======
-                // Downloads tiles in the background with keepBuffer
->>>>>>> Stashed changes
                 + "var tiles = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { keepBuffer: 16, updateWhenIdle: false }).addTo(map);"
-
                 + "var isDownloading = false;"
                 + "tiles.on('loading', function() { "
                 + "  if(!isDownloading) { isDownloading = true; if(window.Android) Android.showToast('Downloading offline map...'); }"
@@ -385,14 +385,8 @@ public class MainActivity extends AppCompatActivity {
                 + "tiles.on('load', function() { "
                 + "  if(isDownloading) { isDownloading = false; if(window.Android) Android.showToast('Map is ready for offline use.'); }"
                 + "});"
-
                 + "var marker = L.marker([" + myLat + ", " + myLon + "]).addTo(map);"
                 + "function updateLocation(lat, lon) { map.setView([lat, lon]); marker.setLatLng([lat, lon]); }"
-
-<<<<<<< Updated upstream
-=======
-                // Forces Leaflet to re-calculate its size to ensure it fetches tiles while hidden
->>>>>>> Stashed changes
                 + "setTimeout(function(){ map.invalidateSize(); }, 500);"
                 + "</script></body></html>";
 
@@ -614,13 +608,24 @@ public class MainActivity extends AppCompatActivity {
 
         networkExecutor.execute(() -> {
             try {
+                long startTime = System.currentTimeMillis();
                 URL url = new URL("http://" + robotIp + "/command?part=" + part + "&cmd=" + cmd);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
                 conn.setConnectTimeout(1000);
-                conn.getResponseCode();
+
+                if (conn.getResponseCode() == 200) {
+                    long latency = System.currentTimeMillis() - startTime;
+                    uiHandler.post(() -> {
+                        if (txtCmdLatency != null) txtCmdLatency.setText("⚙\uFE0F Cmd Latency: " + latency + " ms");
+                    });
+                }
                 conn.disconnect();
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                uiHandler.post(() -> {
+                    if (txtCmdLatency != null) txtCmdLatency.setText("⚙\uFE0F Cmd Latency: ERR");
+                });
+            }
         });
     }
 
@@ -635,7 +640,11 @@ public class MainActivity extends AppCompatActivity {
                 URL url = new URL("http://" + ip + "/telemetry");
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
-                conn.setConnectTimeout(2500);
+
+                // FIX 5: Increased connection test timeout to 3 seconds for the busy ESP32
+                conn.setConnectTimeout(3000);
+                conn.setReadTimeout(3000);
+
                 if (conn.getResponseCode() == 200) {
                     success = true;
                 }
@@ -663,27 +672,27 @@ public class MainActivity extends AppCompatActivity {
                     long ts = snapshot.child("timestamp").getValue(Long.class) != null ? snapshot.child("timestamp").getValue(Long.class) : 0;
                     if (System.currentTimeMillis() - ts < 4000) {
                         updateRobotStatus(true);
+
+                        txtBattery.setText("🔋 Bat: " + snapshot.child("bat").getValue() + " %");
+                        txtWaterLevel.setText("💧 Tank: " + snapshot.child("water").getValue() + " %");
+                        txtHumidity.setText("☁️ Hum: " + snapshot.child("hum").getValue() + " % RH");
+                        txtTemp.setText("🌡 Temp: " + snapshot.child("temp").getValue() + " °C");
+
+                        if (snapshot.hasChild("heading")) {
+                            double heading = snapshot.child("heading").getValue(Double.class);
+                            txtHeadingText.setText(Math.round(heading) + "° " + getHeadingText(heading));
+                            compassDial.setRotation((float) heading);
+                        }
+
+                        if (snapshot.hasChild("lat") && snapshot.hasChild("lon")) {
+                            double lat = snapshot.child("lat").getValue(Double.class);
+                            double lon = snapshot.child("lon").getValue(Double.class);
+                            if (Math.abs(myLat - lat) > 0.0001 || Math.abs(myLon - lon) > 0.0001) {
+                                updateMapLocation(lat, lon);
+                            }
+                        }
                     } else {
                         updateRobotStatus(false);
-                    }
-
-                    txtBattery.setText("🔋 Bat: " + snapshot.child("bat").getValue() + " %");
-                    txtWaterLevel.setText("💧 Tank: " + snapshot.child("water").getValue() + " %");
-                    txtHumidity.setText("☁️ Hum: " + snapshot.child("hum").getValue() + " % RH");
-                    txtTemp.setText("🌡 Temp: " + snapshot.child("temp").getValue() + " °C");
-
-                    if (snapshot.hasChild("heading")) {
-                        double heading = snapshot.child("heading").getValue(Double.class);
-                        txtHeadingText.setText(Math.round(heading) + "° " + getHeadingText(heading));
-                        compassDial.setRotation((float) heading);
-                    }
-
-                    if (snapshot.hasChild("lat") && snapshot.hasChild("lon")) {
-                        double lat = snapshot.child("lat").getValue(Double.class);
-                        double lon = snapshot.child("lon").getValue(Double.class);
-                        if (Math.abs(myLat - lat) > 0.0001 || Math.abs(myLon - lon) > 0.0001) {
-                            updateMapLocation(lat, lon);
-                        }
                     }
                 }
             }
@@ -692,46 +701,93 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startLocalTelemetryPoller() {
-        if (telemetryPoller != null) return;
+        if (telemetryPoller != null) {
+            uiHandler.removeCallbacks(telemetryPoller);
+        }
         telemetryPoller = new Runnable() {
             @Override
             public void run() {
                 networkExecutor.execute(() -> {
                     try {
+                        long startTime = System.currentTimeMillis();
+
                         URL url = new URL("http://" + robotIp + "/telemetry");
                         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                         conn.setRequestMethod("GET");
-                        conn.setConnectTimeout(1500);
+
+                        // FIX 6: Increased timeouts to 3000ms (3 seconds) to prevent false ERR drops
+                        conn.setConnectTimeout(3000);
+                        conn.setReadTimeout(3000);
 
                         if (conn.getResponseCode() == 200) {
+                            long latency = System.currentTimeMillis() - startTime;
+
+                            uiHandler.post(() -> {
+                                lastRobotHeartbeat = System.currentTimeMillis();
+                                updateRobotStatus(true); // Guarantees UI stays online
+                                if (txtVideoLatency != null) txtVideoLatency.setText("\uD83D\uDCFA Video Latency: " + latency + " ms");
+                            });
+
                             BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                             StringBuilder response = new StringBuilder();
                             String line;
                             while ((line = in.readLine()) != null) response.append(line);
                             in.close();
 
-                            JSONObject data = new JSONObject(response.toString());
+                            try {
+                                String jsonString = response.toString();
+                                // Catch the ESP32 missing comma bug if it still exists
+                                if (jsonString.contains("\"heading\":96\"lat\"")) {
+                                    jsonString = jsonString.replace("\"heading\":96\"lat\"", "\"heading\":96,\"lat\"");
+                                }
+                                JSONObject data = new JSONObject(jsonString);
 
-                            Map<String, Object> teleMap = new HashMap<>();
-                            teleMap.put("bat", data.getInt("bat"));
-                            teleMap.put("water", data.getInt("water"));
-                            teleMap.put("hum", data.getDouble("hum"));
-                            teleMap.put("temp", data.getDouble("temp"));
-                            teleMap.put("lat", data.getDouble("lat"));
-                            teleMap.put("lon", data.getDouble("lon"));
-                            teleMap.put("heading", data.optDouble("heading", 0.0));
-                            teleMap.put("timestamp", System.currentTimeMillis());
+                                // Save to Firebase only if cloud is actively connected
+                                if (isCloudConnected) {
+                                    Map<String, Object> teleMap = new HashMap<>();
+                                    teleMap.put("bat", data.optInt("bat", 0));
+                                    teleMap.put("water", data.optInt("water", 0));
+                                    teleMap.put("hum", data.optDouble("hum", 0.0));
+                                    teleMap.put("temp", data.optDouble("temp", 0.0));
+                                    teleMap.put("lat", data.optDouble("lat", 0.0));
+                                    teleMap.put("lon", data.optDouble("lon", 0.0));
+                                    teleMap.put("heading", data.optDouble("heading", 0.0));
+                                    teleMap.put("timestamp", System.currentTimeMillis());
 
-                            String ipKey = robotIp.replace(".", "_");
-                            database.getReference("telemetry").child(ipKey).setValue(teleMap);
+                                    String ipKey = robotIp.replace(".", "_");
+                                    database.getReference("telemetry").child(ipKey).setValue(teleMap);
+                                }
 
-                            uiHandler.post(() -> lastRobotHeartbeat = System.currentTimeMillis());
+                                uiHandler.post(() -> {
+                                    try {
+                                        if (txtBattery != null) txtBattery.setText("🔋 Bat: " + data.optInt("bat", 0) + " %");
+                                        if (txtWaterLevel != null) txtWaterLevel.setText("💧 Tank: " + data.optInt("water", 0) + " %");
+                                        if (txtHumidity != null) txtHumidity.setText("☁️ Hum: " + data.optDouble("hum", 0.0) + " % RH");
+                                        if (txtTemp != null) txtTemp.setText("🌡 Temp: " + data.optDouble("temp", 0.0) + " °C");
+
+                                        if (data.has("heading")) {
+                                            double heading = data.optDouble("heading", 0.0);
+                                            if (txtHeadingText != null) txtHeadingText.setText(Math.round(heading) + "° " + getHeadingText(heading));
+                                            if (compassDial != null) compassDial.setRotation((float) heading);
+                                        }
+                                    } catch (Exception ignored) {}
+                                });
+                            } catch (Exception jsonError) {
+                                Log.e("ROBOT_CONN", "JSON Parse Error: " + jsonError.getMessage());
+                            }
                         }
                         conn.disconnect();
                     } catch (Exception e) {
-                        if (System.currentTimeMillis() - lastRobotHeartbeat > 3000) {
-                            uiHandler.post(() -> updateRobotStatus(developmentMode));
-                        }
+                        Log.e("ROBOT_CONN", "Ping Failed: " + e.getMessage());
+                        uiHandler.post(() -> {
+                            if (txtVideoLatency != null) txtVideoLatency.setText("\uD83D\uDCFA Video Latency: : ERR");
+
+                            // FIX 7: Increased Heartbeat tolerance to 5000ms (5 seconds)
+                            // This stops the overlay from flickering if a single packet drops.
+                            if (System.currentTimeMillis() - lastRobotHeartbeat > 5000) {
+                                updateRobotStatus(false);
+                            }
+                        });
                     }
                 });
                 uiHandler.postDelayed(this, 1500);
@@ -747,14 +803,9 @@ public class MainActivity extends AppCompatActivity {
                 isCloudConnected = Boolean.TRUE.equals(snapshot.getValue(Boolean.class));
                 uiHandler.post(() -> {
                     if (isCloudConnected) {
-<<<<<<< Updated upstream
-=======
-                        // FIX: Pulling map tiles from network to update cache
->>>>>>> Stashed changes
                         mapWebView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
 
                         txtNoInternet.setVisibility(View.GONE);
-
                         btnLogin.setEnabled(true);
                         btnLogin.setBackgroundTintList(ColorStateList.valueOf(0xFF1976D2));
 
@@ -768,12 +819,7 @@ public class MainActivity extends AppCompatActivity {
                             performSync();
                         }
                         wasOffline = false;
-
                     } else {
-<<<<<<< Updated upstream
-=======
-                        // FIX: Forcing WebView to load purely from saved Cache
->>>>>>> Stashed changes
                         mapWebView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
 
                         txtNoInternet.setVisibility(View.VISIBLE);
@@ -785,6 +831,8 @@ public class MainActivity extends AppCompatActivity {
                         txtCloudStatus.setText("CLOUD OFFLINE");
                         txtCloudStatus.setTextColor(0xFFF44336);
                         cloudIndicator.setBackgroundTintList(ColorStateList.valueOf(0xFFF44336));
+
+                        // Prevent UI button from functioning unless in dev mode
                         btnForceSync.setEnabled(developmentMode);
                         txtCloudError.setVisibility(View.VISIBLE);
                     }
@@ -801,10 +849,26 @@ public class MainActivity extends AppCompatActivity {
             txtRobotStatus.setText("ROBOT ONLINE");
             txtRobotStatus.setTextColor(0xFF4CAF50);
             robotIndicator.setBackgroundTintList(ColorStateList.valueOf(0xFF4CAF50));
+
+            if (streamOfflineOverlay != null) streamOfflineOverlay.setVisibility(View.GONE);
+            if (mapOfflineOverlay != null) mapOfflineOverlay.setVisibility(View.GONE);
         } else {
             txtRobotStatus.setText("ROBOT OFFLINE");
             txtRobotStatus.setTextColor(0xFFF44336);
             robotIndicator.setBackgroundTintList(ColorStateList.valueOf(0xFFF44336));
+
+            if (streamOfflineOverlay != null) streamOfflineOverlay.setVisibility(View.VISIBLE);
+            if (mapOfflineOverlay != null) mapOfflineOverlay.setVisibility(View.VISIBLE);
+
+            if (txtBattery != null) txtBattery.setText("🔋 Bat: -- %");
+            if (txtWaterLevel != null) txtWaterLevel.setText("💧 Tank: -- %");
+            if (txtHumidity != null) txtHumidity.setText("☁️ Hum: -- %");
+            if (txtTemp != null) txtTemp.setText("🌡 Temp: -- °C");
+            if (txtHeadingText != null) txtHeadingText.setText("--°");
+            if (compassDial != null) compassDial.setRotation(0f);
+
+            if (txtVideoLatency != null) txtVideoLatency.setText("\uD83D\uDCFA Video Latency: -- ms");
+            if (txtCmdLatency != null) txtCmdLatency.setText("⚙\uFE0F Cmd Latency: -- ms");
         }
     }
 
